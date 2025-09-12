@@ -1,0 +1,483 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Marking - Face Recognition Attendance{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-clipboard-check"></i> Mark Attendance</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- Camera Feed -->
+                    <div class="col-md-8">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5><i class="fas fa-camera"></i> Live Recognition</h5>
+                                <div>
+                                    <span id="fpsCounter" class="badge bg-info me-2">FPS: --</span>
+                                    <span id="statusBadge" class="badge bg-secondary">Ready</span>
+                                </div>
+                            </div>
+                            <div class="card-body">
+                                <div class="video-container">
+                                    <video id="video" autoplay muted></video>
+                                </div>
+                                
+                                <div class="text-center mt-3">
+                                    <button id="startBtn" class="btn btn-success btn-capture">
+                                        <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
+                                        <span class="btn-text">
+                                            <i class="fas fa-play"></i> Start Recognition
+                                        </span>
+                                    </button>
+                                    
+                                    <button id="stopBtn" class="btn btn-danger btn-capture" disabled>
+                                        <span class="btn-text">
+                                            <i class="fas fa-stop"></i> Stop Recognition
+                                        </span>
+                                    </button>
+                                    
+                                    <button id="markAttendanceBtn" class="btn btn-primary btn-capture" disabled>
+                                        <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
+                                        <span class="btn-text">
+                                            <i class="fas fa-check"></i> Mark Attendance
+                                        </span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Control Panel -->
+                    <div class="col-md-4">
+                        <!-- Recognition Settings -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6><i class="fas fa-sliders-h"></i> Recognition Settings</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="mb-3">
+                                    <label for="thresholdSlider" class="form-label">
+                                        Similarity Threshold: <span id="thresholdValue">0.70</span>
+                                    </label>
+                                    <input type="range" class="form-range" id="thresholdSlider" 
+                                           min="0.5" max="0.95" step="0.05" value="0.70">
+                                    <div class="form-text">Higher = more strict matching</div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label for="intervalSelect" class="form-label">Recognition Interval</label>
+                                    <select class="form-select" id="intervalSelect">
+                                        <option value="500">Every 0.5 seconds</option>
+                                        <option value="1000" selected>Every 1 second</option>
+                                        <option value="2000">Every 2 seconds</option>
+                                        <option value="3000">Every 3 seconds</option>
+                                    </select>
+                                </div>
+                                
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="autoMarkCheck" checked>
+                                    <label class="form-check-label" for="autoMarkCheck">
+                                        Auto-mark attendance
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Performance Stats -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6><i class="fas fa-chart-line"></i> Performance</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row text-center">
+                                    <div class="col-6 mb-2">
+                                        <div class="stat-item">
+                                            <div class="stat-value" id="avgFps">--</div>
+                                            <div class="stat-label">Avg FPS</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6 mb-2">
+                                        <div class="stat-item">
+                                            <div class="stat-value" id="avgProcessingTime">--</div>
+                                            <div class="stat-label">Avg Time</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="stat-item">
+                                            <div class="stat-value" id="detectedFaces">--</div>
+                                            <div class="stat-label">Faces</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-6">
+                                        <div class="stat-item">
+                                            <div class="stat-value" id="recognizedCount">--</div>
+                                            <div class="stat-label">Recognized</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Current Session -->
+                        <div class="card">
+                            <div class="card-header">
+                                <h6><i class="fas fa-users"></i> Current Session</h6>
+                            </div>
+                            <div class="card-body">
+                                <div id="recognizedStudents" class="recognized-list">
+                                    <div class="text-muted text-center">
+                                        <i class="fas fa-user-clock"></i>
+                                        <div>No students detected yet</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Attendance History -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header d-flex justify-content-between align-items-center">
+                                <h5><i class="fas fa-history"></i> Today's Attendance</h5>
+                                <button id="refreshAttendanceBtn" class="btn btn-outline-primary btn-sm">
+                                    <i class="fas fa-sync"></i> Refresh
+                                </button>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-striped" id="attendanceTable">
+                                        <thead>
+                                            <tr>
+                                                <th>Student ID</th>
+                                                <th>Time</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            <tr>
+                                                <td colspan="3" class="text-center text-muted">No attendance records for today</td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-item {
+        text-align: center;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: #007bff;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        color: #6c757d;
+    }
+    
+    .recognized-list {
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .student-item {
+        display: flex;
+        justify-content-between;
+        align-items: center;
+        padding: 8px;
+        margin-bottom: 5px;
+        background-color: #f8f9fa;
+        border-radius: 5px;
+    }
+    
+    .student-item.new {
+        background-color: #d4edda;
+        border-left: 4px solid #28a745;
+    }
+    
+    .confidence-bar {
+        width: 60px;
+        height: 6px;
+        background-color: #e9ecef;
+        border-radius: 3px;
+        overflow: hidden;
+    }
+    
+    .confidence-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+    
+    .confidence-high { background-color: #28a745; }
+    .confidence-medium { background-color: #ffc107; }
+    .confidence-low { background-color: #dc3545; }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let recognitionActive = false;
+    let recognitionInterval = null;
+    let currentRecognizedStudents = new Set();
+    let sessionStats = {
+        totalFaces: 0,
+        totalRecognized: 0,
+        fps: [],
+        processingTimes: []
+    };
+    
+    document.addEventListener('DOMContentLoaded', function() {
+        // Event listeners
+        document.getElementById('startBtn').addEventListener('click', startRecognition);
+        document.getElementById('stopBtn').addEventListener('click', stopRecognition);
+        document.getElementById('markAttendanceBtn').addEventListener('click', markAttendance);
+        document.getElementById('refreshAttendanceBtn').addEventListener('click', loadTodaysAttendance);
+        
+        // Settings listeners
+        document.getElementById('thresholdSlider').addEventListener('input', updateThreshold);
+        document.getElementById('intervalSelect').addEventListener('change', updateInterval);
+        
+        // Load today's attendance on page load
+        loadTodaysAttendance();
+    });
+    
+    async function startRecognition() {
+        setLoading('startBtn', true);
+        
+        try {
+            await initCamera();
+            
+            recognitionActive = true;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('statusBadge').className = 'badge bg-success';
+            document.getElementById('statusBadge').textContent = 'Active';
+            
+            const interval = parseInt(document.getElementById('intervalSelect').value);
+            recognitionInterval = setInterval(processFrame, interval);
+            
+            showAlert('Face recognition started!', 'success');
+            
+        } catch (error) {
+            showAlert('Failed to start recognition: ' + error.message, 'danger');
+        } finally {
+            setLoading('startBtn', false);
+        }
+    }
+    
+    function stopRecognition() {
+        recognitionActive = false;
+        
+        if (recognitionInterval) {
+            clearInterval(recognitionInterval);
+            recognitionInterval = null;
+        }
+        
+        document.getElementById('startBtn').disabled = false;
+        document.getElementById('stopBtn').disabled = true;
+        document.getElementById('markAttendanceBtn').disabled = currentRecognizedStudents.size === 0;
+        document.getElementById('statusBadge').className = 'badge bg-secondary';
+        document.getElementById('statusBadge').textContent = 'Stopped';
+        
+        // Remove face overlays
+        document.querySelectorAll('.face-overlay').forEach(el => el.remove());
+        
+        showAlert('Face recognition stopped.', 'info');
+    }
+    
+    async function processFrame() {
+        if (!recognitionActive) return;
+        
+        try {
+            const imageData = captureFrame();
+            const response = await apiRequest('/api/recognize', { image: imageData });
+            
+            if (response.success) {
+                updateStats(response.stats);
+                updateFaceOverlays(response.faces);
+                updateRecognizedStudents(response.faces);
+                
+                // Auto-mark attendance if enabled
+                if (document.getElementById('autoMarkCheck').checked) {
+                    const newStudents = response.faces
+                        .filter(face => face.is_match && !currentRecognizedStudents.has(face.label))
+                        .map(face => face.label);
+                    
+                    if (newStudents.length > 0) {
+                        await autoMarkAttendance(newStudents);
+                    }
+                }
+            }
+            
+        } catch (error) {
+            console.error('Recognition error:', error);
+        }
+    }
+    
+    function updateStats(stats) {
+        sessionStats.fps.push(stats.fps);
+        sessionStats.processingTimes.push(stats.processing_time * 1000);
+        
+        // Keep only last 30 measurements
+        if (sessionStats.fps.length > 30) {
+            sessionStats.fps.shift();
+            sessionStats.processingTimes.shift();
+        }
+        
+        const avgFps = sessionStats.fps.reduce((a, b) => a + b, 0) / sessionStats.fps.length;
+        const avgTime = sessionStats.processingTimes.reduce((a, b) => a + b, 0) / sessionStats.processingTimes.length;
+        
+        document.getElementById('fpsCounter').textContent = `FPS: ${stats.fps.toFixed(1)}`;
+        document.getElementById('avgFps').textContent = avgFps.toFixed(1);
+        document.getElementById('avgProcessingTime').textContent = `${avgTime.toFixed(0)}ms`;
+    }
+    
+    function updateFaceOverlays(faces) {
+        drawFaceOverlays(faces);
+        
+        sessionStats.totalFaces = faces.length;
+        sessionStats.totalRecognized = faces.filter(f => f.is_match).length;
+        
+        document.getElementById('detectedFaces').textContent = sessionStats.totalFaces;
+        document.getElementById('recognizedCount').textContent = sessionStats.totalRecognized;
+    }
+    
+    function updateRecognizedStudents(faces) {
+        const recognizedFaces = faces.filter(face => face.is_match);
+        const container = document.getElementById('recognizedStudents');
+        
+        if (recognizedFaces.length === 0) {
+            if (currentRecognizedStudents.size === 0) {
+                container.innerHTML = `
+                    <div class="text-muted text-center">
+                        <i class="fas fa-user-clock"></i>
+                        <div>No students detected yet</div>
+                    </div>
+                `;
+            }
+            return;
+        }
+        
+        const studentsHtml = recognizedFaces.map(face => {
+            const isNew = !currentRecognizedStudents.has(face.label);
+            currentRecognizedStudents.add(face.label);
+            
+            const confidenceClass = face.confidence > 0.8 ? 'confidence-high' : 
+                                   face.confidence > 0.6 ? 'confidence-medium' : 'confidence-low';
+            
+            return `
+                <div class="student-item ${isNew ? 'new' : ''}">
+                    <div>
+                        <strong>${face.label}</strong>
+                        <div class="small text-muted">${(face.confidence * 100).toFixed(1)}% confidence</div>
+                    </div>
+                    <div class="confidence-bar">
+                        <div class="confidence-fill ${confidenceClass}" 
+                             style="width: ${face.confidence * 100}%"></div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+        
+        container.innerHTML = studentsHtml;
+        
+        // Enable mark attendance button
+        document.getElementById('markAttendanceBtn').disabled = false;
+    }
+    
+    async function markAttendance() {
+        if (currentRecognizedStudents.size === 0) {
+            showAlert('No students to mark attendance for', 'warning');
+            return;
+        }
+        
+        setLoading('markAttendanceBtn', true);
+        
+        try {
+            const response = await apiRequest('/api/mark_attendance', {
+                student_ids: Array.from(currentRecognizedStudents)
+            });
+            
+            if (response.success) {
+                showAlert(`Attendance marked for ${response.students.length} students`, 'success');
+                currentRecognizedStudents.clear();
+                document.getElementById('markAttendanceBtn').disabled = true;
+                loadTodaysAttendance(); // Refresh attendance table
+            } else {
+                showAlert('Failed to mark attendance: ' + response.message, 'danger');
+            }
+            
+        } catch (error) {
+            showAlert('Error marking attendance: ' + error.message, 'danger');
+        } finally {
+            setLoading('markAttendanceBtn', false);
+        }
+    }
+    
+    async function autoMarkAttendance(studentIds) {
+        try {
+            const response = await apiRequest('/api/mark_attendance', {
+                student_ids: studentIds
+            });
+            
+            if (response.success) {
+                showAlert(`Auto-marked: ${studentIds.join(', ')}`, 'success', true);
+                loadTodaysAttendance();
+            }
+            
+        } catch (error) {
+            console.error('Auto-mark failed:', error);
+        }
+    }
+    
+    async function loadTodaysAttendance() {
+        // This is a simplified version - in a real app, you'd have an API endpoint
+        // to get today's attendance records
+        try {
+            const tbody = document.querySelector('#attendanceTable tbody');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="3" class="text-center text-muted">
+                        <i class="fas fa-info-circle"></i> 
+                        Attendance records are saved to CSV file
+                    </td>
+                </tr>
+            `;
+        } catch (error) {
+            console.error('Error loading attendance:', error);
+        }
+    }
+    
+    function updateThreshold() {
+        const value = document.getElementById('thresholdSlider').value;
+        document.getElementById('thresholdValue').textContent = parseFloat(value).toFixed(2);
+    }
+    
+    function updateInterval() {
+        if (recognitionActive && recognitionInterval) {
+            clearInterval(recognitionInterval);
+            const interval = parseInt(document.getElementById('intervalSelect').value);
+            recognitionInterval = setInterval(processFrame, interval);
+        }
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+
+{% block title %}Configuration - Face Recognition Attendance{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-10 mx-auto">
+        <div class="card">
+            <div class="card-header">
+                <h3><i class="fas fa-cog"></i> System Configuration</h3>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <!-- Model Configuration -->
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-brain"></i> AI Model Settings</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="modelConfigForm">
+                                    <div class="mb-3">
+                                        <label for="modelSelect" class="form-label">Face Recognition Model</label>
+                                        <select class="form-select" id="modelSelect">
+                                            {% for model in models %}
+                                            <option value="{{ model }}" 
+                                                {% if model == config.model %}selected{% endif %}>
+                                                {{ model }}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                        <div class="form-text">Select the AI model for face recognition</div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="thresholdSlider" class="form-label">
+                                            Similarity Threshold: <span id="thresholdValue">{{ "%.2f"|format(config.threshold) }}</span>
+                                        </label>
+                                        <input type="range" class="form-range" id="thresholdSlider" 
+                                               min="0.5" max="0.95" step="0.01" value="{{ config.threshold }}">
+                                        <div class="form-text">Higher values = more strict matching</div>
+                                    </div>
+                                    
+                                    <div class="mb-3">
+                                        <label for="similarityMetric" class="form-label">Similarity Metric</label>
+                                        <select class="form-select" id="similarityMetric">
+                                            <option value="cosine" 
+                                                {% if config.similarity_metric == 'cosine' %}selected{% endif %}>
+                                                Cosine Similarity
+                                            </option>
+                                            <option value="euclidean" 
+                                                {% if config.similarity_metric == 'euclidean' %}selected{% endif %}>
+                                                Euclidean Distance
+                                            </option>
+                                        </select>
+                                        <div class="form-text">Method for comparing face embeddings</div>
+                                    </div>
+                                    
+                                    <div class="d-grid gap-2">
+                                        <button type="button" class="btn btn-primary" id="initModelBtn">
+                                            <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
+                                            <span class="btn-text">
+                                                <i class="fas fa-sync"></i> Initialize Model
+                                            </span>
+                                        </button>
+                                        
+                                        <button type="button" class="btn btn-success" id="saveConfigBtn">
+                                            <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
+                                            <span class="btn-text">
+                                                <i class="fas fa-save"></i> Save Configuration
+                                            </span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Model Comparison -->
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-chart-bar"></i> Model Comparison</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="table-responsive">
+                                    <table class="table table-sm">
+                                        <thead>
+                                            <tr>
+                                                <th>Model</th>
+                                                <th>Accuracy</th>
+                                                <th>Speed</th>
+                                                <th>Size</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for model, info in model_configs.items() %}
+                                            <tr id="model-{{ model }}" class="model-row">
+                                                <td>
+                                                    <strong>{{ model }}</strong>
+                                                    {% if model == config.model %}
+                                                    <span class="badge bg-primary ms-1">Current</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-{% if info.accuracy == 'Very High' %}success{% elif info.accuracy == 'High' %}info{% else %}warning{% endif %}">
+                                                        {{ info.accuracy }}
+                                                    </span>
+                                                </td>
+                                                <td>
+                                                    <span class="badge bg-{% if info.speed == 'Very Fast' %}success{% elif info.speed == 'Fast' %}info{% else %}warning{% endif %}">
+                                                        {{ info.speed }}
+                                                    </span>
+                                                </td>
+                                                <td class="small text-muted">{{ info.embedding_dim }}D</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                
+                                <div class="mt-3">
+                                    <h6>Recommendations:</h6>
+                                    <ul class="small">
+                                        <li><strong>FaceNet:</strong> Best balance of accuracy and speed</li>
+                                        <li><strong>ArcFace:</strong> Highest accuracy for critical applications</li>
+                                        <li><strong>MobileNetV2:</strong> Fastest for real-time applications</li>
+                                        <li><strong>ResNet50:</strong> Good fallback option</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- System Information -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-info-circle"></i> System Information</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-4">
+                                        <h6>Available Libraries:</h6>
+                                        <div id="libraryStatus">
+                                            <div class="mb-1">
+                                                <span class="badge bg-secondary">Loading...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-md-4">
+                                        <h6>Current Model Status:</h6>
+                                        <div id="modelStatus">
+                                            <div class="mb-1">
+                                                <span class="badge bg-secondary">Checking...</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-md-4">
+                                        <h6>Data Storage:</h6>
+                                        <div id="storageInfo">
+                                            <div class="mb-1">
+                                                <i class="fas fa-folder"></i> 
+                                                <span class="small">Data directory: ./data/</span>
+                                            </div>
+                                            <div class="mb-1">
+                                                <i class="fas fa-file-csv"></i> 
+                                                <span class="small">Attendance: attendance.csv</span>
+                                            </div>
+                                            <div class="mb-1">
+                                                <i class="fas fa-database"></i> 
+                                                <span class="small">Embeddings: embeddings.pkl</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Advanced Settings -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-tools"></i> Advanced Settings</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>Face Detection Settings:</h6>
+                                        <div class="mb-3">
+                                            <label class="form-label">Min Face Size (pixels)</label>
+                                            <input type="number" class="form-control" value="30" min="20" max="100">
+                                            <div class="form-text">Minimum face size for detection</div>
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label">Detection Confidence</label>
+                                            <input type="range" class="form-range" min="0.5" max="1.0" step="0.1" value="0.9">
+                                            <div class="form-text">Minimum confidence for face detection</div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="col-md-6">
+                                        <h6>Performance Settings:</h6>
+                                        <div class="mb-3">
+                                            <label class="form-label">Frame Skip</label>
+                                            <select class="form-select">
+                                                <option value="1">Process every frame</option>
+                                                <option value="2" selected>Process every 2nd frame</option>
+                                                <option value="3">Process every 3rd frame</option>
+                                                <option value="5">Process every 5th frame</option>
+                                            </select>
+                                            <div class="form-text">Skip frames to improve performance</div>
+                                        </div>
+                                        
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="checkbox" checked>
+                                            <label class="form-check-label">
+                                                Enable performance monitoring
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Event listeners
+        document.getElementById('thresholdSlider').addEventListener('input', updateThresholdValue);
+        document.getElementById('initModelBtn').addEventListener('click', initializeModel);
+        document.getElementById('saveConfigBtn').addEventListener('click', saveConfiguration);
+        document.getElementById('modelSelect').addEventListener('change', highlightSelectedModel);
+        
+        // Load system information
+        loadSystemInfo();
+        highlightSelectedModel();
+    });
+    
+    function updateThresholdValue() {
+        const value = document.getElementById('thresholdSlider').value;
+        document.getElementById('thresholdValue').textContent = parseFloat(value).toFixed(2);
+    }
+    
+    async function initializeModel() {
+        const selectedModel = document.getElementById('modelSelect').value;
+        setLoading('initModelBtn', true);
+        
+        try {
+            const response = await apiRequest('/api/initialize_model', {
+                model: selectedModel
+            });
+            
+            if (response.success) {
+                showAlert(response.message, 'success');
+                updateModelStatus(selectedModel, 'Initialized');
+            } else {
+                showAlert('Model initialization failed: ' + response.message, 'danger');
+            }
+            
+        } catch (error) {
+            showAlert('Error initializing model: ' + error.message, 'danger');
+        } finally {
+            setLoading('initModelBtn', false);
+        }
+    }
+    
+    async function saveConfiguration() {
+        setLoading('saveConfigBtn', true);
+        
+        try {
+            const config = {
+                model: document.getElementById('modelSelect').value,
+                threshold: parseFloat(document.getElementById('thresholdSlider').value),
+                similarity_metric: document.getElementById('similarityMetric').value
+            };
+            
+            const response = await apiRequest('/api/save_config', config);
+            
+            if (response.success) {
+                showAlert('Configuration saved successfully!', 'success');
+            } else {
+                showAlert('Failed to save configuration: ' + response.message, 'danger');
+            }
+            
+        } catch (error) {
+            showAlert('Error saving configuration: ' + error.message, 'danger');
+        } finally {
+            setLoading('saveConfigBtn', false);
+        }
+    }
+    
+    function highlightSelectedModel() {
+        // Remove current highlights
+        document.querySelectorAll('.model-row').forEach(row => {
+            row.classList.remove('table-primary');
+            const badge = row.querySelector('.badge.bg-primary');
+            if (badge && badge.textContent === 'Current') {
+                badge.remove();
+            }
+        });
+        
+        // Highlight selected model
+        const selectedModel = document.getElementById('modelSelect').value;
+        const selectedRow = document.getElementById(`model-${selectedModel}`);
+        if (selectedRow) {
+            selectedRow.classList.add('table-primary');
+            const modelCell = selectedRow.querySelector('td:first-child strong');
+            if (modelCell) {
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-primary ms-1';
+                badge.textContent = 'Current';
+                modelCell.parentNode.appendChild(badge);
+            }
+        }
+    }
+    
+    async function loadSystemInfo() {
+        try {
+            // Simulate checking library availability
+            const libraries = [
+                { name: 'OpenCV', status: 'available' },
+                { name: 'TensorFlow', status: 'available' },
+                { name: 'MTCNN', status: 'unknown' },
+                { name: 'FaceNet-PyTorch', status: 'unknown' },
+                { name: 'InsightFace', status: 'unknown' }
+            ];
+            
+            const libraryStatusHtml = libraries.map(lib => {
+                const badgeClass = lib.status === 'available' ? 'bg-success' : 
+                                  lib.status === 'unavailable' ? 'bg-danger' : 'bg-warning';
+                const icon = lib.status === 'available' ? 'fas fa-check' : 
+                            lib.status === 'unavailable' ? 'fas fa-times' : 'fas fa-question';
+                
+                return `
+                    <div class="mb-1">
+                        <i class="${icon}"></i>
+                        <span class="badge ${badgeClass} me-2">${lib.name}</span>
+                        <span class="small text-muted">${lib.status}</span>
+                    </div>
+                `;
+            }).join('');
+            
+            document.getElementById('libraryStatus').innerHTML = libraryStatusHtml;
+            
+            // Update model status
+            updateModelStatus('MobileNetV2', 'Ready');
+            
+        } catch (error) {
+            console.error('Error loading system info:', error);
+        }
+    }
+    
+    function updateModelStatus(modelName, status) {
+        const statusHtml = `
+            <div class="mb-1">
+                <i class="fas fa-brain"></i>
+                <span class="badge bg-info me-2">${modelName}</span>
+                <span class="small text-muted">${status}</span>
+            </div>
+        `;
+        
+        document.getElementById('modelStatus').innerHTML = statusHtml;
+    }
+</script>
+{% endblock %}

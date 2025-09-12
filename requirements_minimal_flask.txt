@@ -1,0 +1,12 @@
+Flask>=2.3.0
+Flask-SocketIO>=5.3.0
+opencv-python-headless
+numpy
+Pillow
+scikit-learn
+
+# Optional advanced models (install if needed)
+# mtcnn
+# facenet-pytorch
+# insightface
+# tensorflow

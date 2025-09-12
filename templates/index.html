@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+
+{% block title %}Home - Face Recognition Attendance System{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <div class="card">
+            <div class="card-header text-center">
+                <h2><i class="fas fa-home"></i> Face Recognition Attendance System</h2>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-user-plus fa-3x text-primary mb-3"></i>
+                                <h5 class="card-title">Student Enrollment</h5>
+                                <p class="card-text">Register new students by capturing their facial features for recognition.</p>
+                                <a href="{{ url_for('enrollment') }}" class="btn btn-primary">
+                                    <i class="fas fa-arrow-right"></i> Enroll Students
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-clipboard-check fa-3x text-success mb-3"></i>
+                                <h5 class="card-title">Mark Attendance</h5>
+                                <p class="card-text">Use real-time face recognition to automatically mark student attendance.</p>
+                                <a href="{{ url_for('attendance') }}" class="btn btn-success">
+                                    <i class="fas fa-arrow-right"></i> Mark Attendance
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-4 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <i class="fas fa-cog fa-3x text-info mb-3"></i>
+                                <h5 class="card-title">Configuration</h5>
+                                <p class="card-text">Configure face recognition models, thresholds, and system settings.</p>
+                                <a href="{{ url_for('config') }}" class="btn btn-info">
+                                    <i class="fas fa-arrow-right"></i> Configure
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- System Status -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card bg-light">
+                            <div class="card-header">
+                                <h5><i class="fas fa-info-circle"></i> System Status</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h6>Model Information:</h6>
+                                        <div id="modelStatus">
+                                            <span class="badge bg-secondary">Loading...</span>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <h6>Enrolled Students:</h6>
+                                        <div id="studentCount">
+                                            <span class="badge bg-secondary">Loading...</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="row mt-3">
+                                    <div class="col-12">
+                                        <h6>Available Models:</h6>
+                                        <div class="row">
+                                            <div class="col-sm-6 col-lg-3 mb-2">
+                                                <span class="badge bg-primary">FaceNet</span>
+                                                <small class="text-muted d-block">High accuracy, fast</small>
+                                            </div>
+                                            <div class="col-sm-6 col-lg-3 mb-2">
+                                                <span class="badge bg-success">ArcFace</span>
+                                                <small class="text-muted d-block">Very high accuracy</small>
+                                            </div>
+                                            <div class="col-sm-6 col-lg-3 mb-2">
+                                                <span class="badge bg-warning">ResNet50</span>
+                                                <small class="text-muted d-block">Medium accuracy, slower</small>
+                                            </div>
+                                            <div class="col-sm-6 col-lg-3 mb-2">
+                                                <span class="badge bg-info">MobileNetV2</span>
+                                                <small class="text-muted d-block">Balanced speed/accuracy</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Features -->
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5><i class="fas fa-star"></i> Key Features</h5>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <ul class="list-unstyled">
+                                            <li><i class="fas fa-check text-success"></i> Multiple AI models support</li>
+                                            <li><i class="fas fa-check text-success"></i> Real-time face detection</li>
+                                            <li><i class="fas fa-check text-success"></i> Quality-based enrollment</li>
+                                            <li><i class="fas fa-check text-success"></i> Performance monitoring</li>
+                                        </ul>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <ul class="list-unstyled">
+                                            <li><i class="fas fa-check text-success"></i> Configurable thresholds</li>
+                                            <li><i class="fas fa-check text-success"></i> Duplicate prevention</li>
+                                            <li><i class="fas fa-check text-success"></i> Web-based interface</li>
+                                            <li><i class="fas fa-check text-success"></i> CSV attendance export</li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Load system status on page load
+    document.addEventListener('DOMContentLoaded', async function() {
+        await loadSystemStatus();
+    });
+    
+    async function loadSystemStatus() {
+        try {
+            // Load students count
+            const studentsResponse = await fetch('/api/students');
+            const studentsData = await studentsResponse.json();
+            
+            if (studentsData.success) {
+                const count = studentsData.students.length;
+                document.getElementById('studentCount').innerHTML = 
+                    `<span class="badge bg-primary">${count} Students</span>`;
+            } else {
+                document.getElementById('studentCount').innerHTML = 
+                    '<span class="badge bg-danger">Error loading</span>';
+            }
+            
+            // Update model status
+            document.getElementById('modelStatus').innerHTML = 
+                '<span class="badge bg-success">Ready</span>';
+                
+        } catch (error) {
+            console.error('Error loading system status:', error);
+            document.getElementById('studentCount').innerHTML = 
+                '<span class="badge bg-danger">Error</span>';
+            document.getElementById('modelStatus').innerHTML = 
+                '<span class="badge bg-danger">Error</span>';
+        }
+    }
+</script>
+{% endblock %}
