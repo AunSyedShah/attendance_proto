@@ -15,6 +15,7 @@ import time
 import base64
 import io
 from PIL import Image
+import mediapipe as mp
 
 app = Flask(__name__)
 CORS(app)
@@ -48,11 +49,42 @@ model = load_model("ResNet50")
 # Camera access is now handled by the browser using getUserMedia API
 
 # ---------------- FACE UTILS ----------------
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+# Initialize MediaPipe Face Detection
+mp_face_detection = mp.solutions.face_detection
+mp_drawing = mp.solutions.drawing_utils
+face_detection = mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5)
 
 def detect_faces(frame):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    return face_cascade.detectMultiScale(gray, 1.3, 5)
+    """
+    Detect faces using MediaPipe Face Detection
+    Returns list of (x, y, w, h) tuples for compatibility with existing code
+    """
+    # Convert BGR to RGB for MediaPipe
+    rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    
+    # Process the frame
+    results = face_detection.process(rgb_frame)
+    
+    faces = []
+    if results.detections:
+        h, w, _ = frame.shape
+        for detection in results.detections:
+            # Get bounding box
+            bbox = detection.location_data.relative_bounding_box
+            x = int(bbox.xmin * w)
+            y = int(bbox.ymin * h)
+            width = int(bbox.width * w)
+            height = int(bbox.height * h)
+            
+            # Ensure coordinates are within frame bounds
+            x = max(0, x)
+            y = max(0, y)
+            width = min(width, w - x)
+            height = min(height, h - y)
+            
+            faces.append((x, y, width, height))
+    
+    return faces
 
 def preprocess_face(face_img):
     face_img = cv2.resize(face_img, (224, 224))
