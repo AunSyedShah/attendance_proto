@@ -1,0 +1,18 @@
+Flask
+Flask-SocketIO
+opencv-python-headless
+numpy
+Pillow
+scikit-learn
+tensorflow
+python-socketio
+python-engineio
+
+# Optional advanced models (install if needed)
+mtcnn
+facenet-pytorch
+insightface
+
+# Development dependencies
+python-dotenv
+flask-cors

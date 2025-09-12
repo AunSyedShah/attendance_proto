@@ -1,176 +1,448 @@
-{% extends "base.html" %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Recognition Attendance System</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .video-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        #video-element {
+            max-width: 100%;
+            border: 2px solid #333;
+            border-radius: 8px;
+            width: 640px;
+            height: 480px;
+        }
+        #canvas {
+            display: none;
+        }
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin: 20px 0;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #0056b3;
+        }
+        .btn-success {
+            background-color: #28a745;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #1e7e34;
+        }
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #c82333;
+        }
+        input[type="text"] {
+            padding: 12px;
+            font-size: 16px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-right: 10px;
+            width: 200px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+            font-weight: bold;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .attendance-list {
+            background: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        .attendance-list h4 {
+            margin-top: 0;
+            color: #333;
+        }
+        .attendance-list ul {
+            list-style-type: none;
+            padding: 0;
+        }
+        .attendance-list li {
+            padding: 8px;
+            margin: 5px 0;
+            background: #e9ecef;
+            border-radius: 3px;
+        }
+        .face-info {
+            background: #e9ecef;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Face Recognition Attendance System</h1>
+            <p>Advanced attendance tracking using AI-powered face recognition</p>
+        </div>
 
-{% block title %}Home - Face Recognition Attendance System{% endblock %}
-
-{% block content %}
-<div class="row">
-    <div class="col-lg-8 mx-auto">
-        <div class="card">
-            <div class="card-header text-center">
-                <h2><i class="fas fa-home"></i> Face Recognition Attendance System</h2>
+        <!-- Camera Section -->
+        <div class="section">
+            <h3>📹 Camera Feed</h3>
+            <div class="video-container">
+                <video id="video-element" autoplay muted></video>
+                <canvas id="canvas" width="640" height="480"></canvas>
             </div>
-            <div class="card-body">
-                <div class="row text-center">
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-user-plus fa-3x text-primary mb-3"></i>
-                                <h5 class="card-title">Student Enrollment</h5>
-                                <p class="card-text">Register new students by capturing their facial features for recognition.</p>
-                                <a href="{{ url_for('enrollment') }}" class="btn btn-primary">
-                                    <i class="fas fa-arrow-right"></i> Enroll Students
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-clipboard-check fa-3x text-success mb-3"></i>
-                                <h5 class="card-title">Mark Attendance</h5>
-                                <p class="card-text">Use real-time face recognition to automatically mark student attendance.</p>
-                                <a href="{{ url_for('attendance') }}" class="btn btn-success">
-                                    <i class="fas fa-arrow-right"></i> Mark Attendance
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="col-md-4 mb-4">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <i class="fas fa-cog fa-3x text-info mb-3"></i>
-                                <h5 class="card-title">Configuration</h5>
-                                <p class="card-text">Configure face recognition models, thresholds, and system settings.</p>
-                                <a href="{{ url_for('config') }}" class="btn btn-info">
-                                    <i class="fas fa-arrow-right"></i> Configure
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- System Status -->
-                <div class="row mt-4">
-                    <div class="col-12">
-                        <div class="card bg-light">
-                            <div class="card-header">
-                                <h5><i class="fas fa-info-circle"></i> System Status</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <h6>Model Information:</h6>
-                                        <div id="modelStatus">
-                                            <span class="badge bg-secondary">Loading...</span>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <h6>Enrolled Students:</h6>
-                                        <div id="studentCount">
-                                            <span class="badge bg-secondary">Loading...</span>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <div class="row mt-3">
-                                    <div class="col-12">
-                                        <h6>Available Models:</h6>
-                                        <div class="row">
-                                            <div class="col-sm-6 col-lg-3 mb-2">
-                                                <span class="badge bg-primary">FaceNet</span>
-                                                <small class="text-muted d-block">High accuracy, fast</small>
-                                            </div>
-                                            <div class="col-sm-6 col-lg-3 mb-2">
-                                                <span class="badge bg-success">ArcFace</span>
-                                                <small class="text-muted d-block">Very high accuracy</small>
-                                            </div>
-                                            <div class="col-sm-6 col-lg-3 mb-2">
-                                                <span class="badge bg-warning">ResNet50</span>
-                                                <small class="text-muted d-block">Medium accuracy, slower</small>
-                                            </div>
-                                            <div class="col-sm-6 col-lg-3 mb-2">
-                                                <span class="badge bg-info">MobileNetV2</span>
-                                                <small class="text-muted d-block">Balanced speed/accuracy</small>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Features -->
-                <div class="row mt-4">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5><i class="fas fa-star"></i> Key Features</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <ul class="list-unstyled">
-                                            <li><i class="fas fa-check text-success"></i> Multiple AI models support</li>
-                                            <li><i class="fas fa-check text-success"></i> Real-time face detection</li>
-                                            <li><i class="fas fa-check text-success"></i> Quality-based enrollment</li>
-                                            <li><i class="fas fa-check text-success"></i> Performance monitoring</li>
-                                        </ul>
-                                    </div>
-                                    <div class="col-md-6">
-                                        <ul class="list-unstyled">
-                                            <li><i class="fas fa-check text-success"></i> Configurable thresholds</li>
-                                            <li><i class="fas fa-check text-success"></i> Duplicate prevention</li>
-                                            <li><i class="fas fa-check text-success"></i> Web-based interface</li>
-                                            <li><i class="fas fa-check text-success"></i> CSV attendance export</li>
-                                        </ul>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+            <div class="controls">
+                <button class="btn-primary" onclick="startCamera('attendance')">Start Attendance Mode</button>
+                <button class="btn-success" onclick="startCamera('enrollment')">Start Enrollment Mode</button>
+                <button class="btn-danger" onclick="stopCamera()">Stop Camera</button>
+            </div>
+            <div id="status-messages"></div>
+            <div id="face-info" class="face-info" style="display: none;"></div>
+        </div>
+
+        <!-- Enrollment Section -->
+        <div class="section">
+            <h3>📝 Student Enrollment</h3>
+            <div class="controls">
+                <input type="text" id="student-id" placeholder="Enter Student ID" maxlength="50">
+                <button class="btn-success" onclick="startEnrollment()">Start Enrollment</button>
+                <button class="btn-primary" onclick="completeEnrollment()">Complete Enrollment</button>
+            </div>
+            <div id="enrollment-status"></div>
+        </div>
+
+        <!-- Attendance Section -->
+        <div class="section">
+            <h3>✅ Attendance Tracking</h3>
+            <div class="controls">
+                <button class="btn-primary" onclick="getAttendance()">View Current Attendance</button>
+                <button class="btn-success" onclick="saveAttendance()">Save Attendance</button>
+                <button class="btn-danger" onclick="clearAttendance()">Clear Attendance</button>
+            </div>
+            <div id="attendance-display">
+                <div class="attendance-list">
+                    <h4>Present Students:</h4>
+                    <ul id="attendance-list"></ul>
                 </div>
             </div>
         </div>
     </div>
-</div>
-{% endblock %}
 
-{% block extra_js %}
-<script>
-    // Load system status on page load
-    document.addEventListener('DOMContentLoaded', async function() {
-        await loadSystemStatus();
-    });
-    
-    async function loadSystemStatus() {
-        try {
-            // Load students count
-            const studentsResponse = await fetch('/api/students');
-            const studentsData = await studentsResponse.json();
-            
-            if (studentsData.success) {
-                const count = studentsData.students.length;
-                document.getElementById('studentCount').innerHTML = 
-                    `<span class="badge bg-primary">${count} Students</span>`;
+    <script>
+        let currentMode = null;
+        let videoElement = null;
+        let canvas = null;
+        let ctx = null;
+        let stream = null;
+        let processingInterval = null;
+
+        function showStatus(message, type = 'success') {
+            const statusDiv = document.getElementById('status-messages');
+            statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+            setTimeout(() => {
+                statusDiv.innerHTML = '';
+            }, 5000);
+        }
+
+        function updateFaceInfo(info) {
+            const faceInfoDiv = document.getElementById('face-info');
+            if (info && (info.faces > 0 || info.samples !== undefined)) {
+                let message = `Faces detected: ${info.faces}`;
+                if (info.samples !== undefined) {
+                    message += ` | Samples collected: ${info.samples}`;
+                }
+                if (info.recognized && info.recognized.length > 0) {
+                    message += ` | Recognized: ${info.recognized.join(', ')}`;
+                }
+                faceInfoDiv.innerHTML = message;
+                faceInfoDiv.style.display = 'block';
             } else {
-                document.getElementById('studentCount').innerHTML = 
-                    '<span class="badge bg-danger">Error loading</span>';
+                faceInfoDiv.style.display = 'none';
+            }
+        }
+
+        async function startCamera(mode) {
+            try {
+                // Get video element and canvas
+                videoElement = document.getElementById('video-element');
+                canvas = document.getElementById('canvas');
+                ctx = canvas.getContext('2d');
+
+                // Request camera access
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { width: 640, height: 480 }
+                });
+                
+                videoElement.srcObject = stream;
+                
+                // Start the backend mode
+                const response = await fetch('/start_camera', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ mode: mode })
+                });
+                
+                const data = await response.json();
+                if (data.status === 'success') {
+                    currentMode = mode;
+                    showStatus(`Camera started in ${mode} mode`);
+                    
+                    // Start processing frames
+                    processingInterval = setInterval(processFrame, 1000); // Process every second
+                } else {
+                    showStatus(data.message, 'error');
+                    stopCamera();
+                }
+                
+            } catch (error) {
+                showStatus('Error accessing camera: ' + error.message, 'error');
+                console.error('Camera error:', error);
+            }
+        }
+
+        function processFrame() {
+            if (!videoElement || !currentMode) return;
+            
+            // Draw video frame to canvas
+            ctx.drawImage(videoElement, 0, 0, 640, 480);
+            
+            // Get image data as base64
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            // Send to backend for processing
+            fetch('/process_frame', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    image: imageData,
+                    mode: currentMode
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    updateFaceInfo(data.result);
+                    
+                    // Auto-refresh attendance list if in attendance mode
+                    if (currentMode === 'attendance' && data.result.recognized && data.result.recognized.length > 0) {
+                        getAttendance();
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Frame processing error:', error);
+            });
+        }
+
+        function stopCamera() {
+            currentMode = null;
+            
+            // Stop processing interval
+            if (processingInterval) {
+                clearInterval(processingInterval);
+                processingInterval = null;
             }
             
-            // Update model status
-            document.getElementById('modelStatus').innerHTML = 
-                '<span class="badge bg-success">Ready</span>';
-                
-        } catch (error) {
-            console.error('Error loading system status:', error);
-            document.getElementById('studentCount').innerHTML = 
-                '<span class="badge bg-danger">Error</span>';
-            document.getElementById('modelStatus').innerHTML = 
-                '<span class="badge bg-danger">Error</span>';
+            // Stop video stream
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            
+            // Clear video element
+            if (videoElement) {
+                videoElement.srcObject = null;
+            }
+            
+            // Hide face info
+            document.getElementById('face-info').style.display = 'none';
+            
+            // Notify backend
+            fetch('/stop_camera', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus(data.message);
+            })
+            .catch(error => {
+                showStatus('Error stopping camera: ' + error.message, 'error');
+            });
         }
-    }
-</script>
-{% endblock %}
+
+        function startEnrollment() {
+            const studentId = document.getElementById('student-id').value.trim();
+            if (!studentId) {
+                showStatus('Please enter a Student ID', 'error');
+                return;
+            }
+
+            fetch('/start_enrollment', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    student_id: studentId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                const statusDiv = document.getElementById('enrollment-status');
+                if (data.status === 'success') {
+                    statusDiv.innerHTML = `<div class="status success">${data.message}</div>`;
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">${data.message}</div>`;
+                }
+            })
+            .catch(error => {
+                showStatus('Error starting enrollment: ' + error.message, 'error');
+            });
+        }
+
+        function completeEnrollment() {
+            fetch('/complete_enrollment', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                const statusDiv = document.getElementById('enrollment-status');
+                if (data.status === 'success') {
+                    statusDiv.innerHTML = `<div class="status success">${data.message}</div>`;
+                    document.getElementById('student-id').value = '';
+                } else {
+                    statusDiv.innerHTML = `<div class="status error">${data.message}</div>`;
+                }
+            })
+            .catch(error => {
+                showStatus('Error completing enrollment: ' + error.message, 'error');
+            });
+        }
+
+        function getAttendance() {
+            fetch('/get_attendance')
+            .then(response => response.json())
+            .then(data => {
+                const attendanceList = document.getElementById('attendance-list');
+                attendanceList.innerHTML = '';
+                
+                if (data.attendance && data.attendance.length > 0) {
+                    data.attendance.forEach(student => {
+                        const li = document.createElement('li');
+                        li.textContent = student;
+                        attendanceList.appendChild(li);
+                    });
+                } else {
+                    attendanceList.innerHTML = '<li>No students marked present yet</li>';
+                }
+            })
+            .catch(error => {
+                showStatus('Error getting attendance: ' + error.message, 'error');
+            });
+        }
+
+        function saveAttendance() {
+            fetch('/save_attendance', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showStatus(data.message);
+                    getAttendance();
+                } else {
+                    showStatus(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showStatus('Error saving attendance: ' + error.message, 'error');
+            });
+        }
+
+        function clearAttendance() {
+            fetch('/clear_attendance', {
+                method: 'POST',
+            })
+            .then(response => response.json())
+            .then(data => {
+                showStatus(data.message);
+                getAttendance();
+            })
+            .catch(error => {
+                showStatus('Error clearing attendance: ' + error.message, 'error');
+            });
+        }
+
+        // Load initial attendance on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            getAttendance();
+        });
+
+        // Cleanup on page unload
+        window.addEventListener('beforeunload', function() {
+            stopCamera();
+        });
+    </script>
+</body>
+</html>
