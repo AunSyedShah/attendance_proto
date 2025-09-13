@@ -105,8 +105,14 @@
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">
-                            <i class="fas fa-home"></i> Home
+                        <a class="nav-link" href="{{ url_for('attendance') }}">
+                            <i class="fas fa-clipboard-check"></i> Mark Attendance
+                        </a>
+                    </li>
+                    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('admin_dashboard') }}">
+                            <i class="fas fa-tachometer-alt"></i> Dashboard
                         </a>
                     </li>
                     <li class="nav-item">
@@ -115,8 +121,8 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('attendance') }}">
-                            <i class="fas fa-clipboard-check"></i> Attendance
+                        <a class="nav-link" href="{{ url_for('view_attendance') }}">
+                            <i class="fas fa-list"></i> View Records
                         </a>
                     </li>
                     <li class="nav-item">
@@ -124,6 +130,28 @@
                             <i class="fas fa-cog"></i> Configuration
                         </a>
                     </li>
+                    {% endif %}
+                </ul>
+                
+                <ul class="navbar-nav">
+                    {% if current_user.is_authenticated and current_user.role == 'admin' %}
+                    <li class="nav-item dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown" role="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-user"></i> {{ current_user.username }}
+                        </a>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="{{ url_for('logout') }}">
+                                <i class="fas fa-sign-out-alt"></i> Logout
+                            </a></li>
+                        </ul>
+                    </li>
+                    {% else %}
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('login') }}">
+                            <i class="fas fa-sign-in-alt"></i> Admin Login
+                        </a>
+                    </li>
+                    {% endif %}
                 </ul>
             </div>
         </div>

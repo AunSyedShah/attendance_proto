@@ -1,483 +1,235 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 
-{% block title %}Attendance Marking - Face Recognition Attendance{% endblock %}
+{% block title %}Attendance - Face Recognition System{% endblock %}
 
 {% block content %}
-<div class="row">
-    <div class="col-lg-12">
-        <div class="card">
-            <div class="card-header">
-                <h3><i class="fas fa-clipboard-check"></i> Mark Attendance</h3>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <!-- Camera Feed -->
-                    <div class="col-md-8">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <h5><i class="fas fa-camera"></i> Live Recognition</h5>
-                                <div>
-                                    <span id="fpsCounter" class="badge bg-info me-2">FPS: --</span>
-                                    <span id="statusBadge" class="badge bg-secondary">Ready</span>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="video-container">
-                                    <video id="video" autoplay muted></video>
-                                </div>
-                                
-                                <div class="text-center mt-3">
-                                    <button id="startBtn" class="btn btn-success btn-capture">
-                                        <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
-                                        <span class="btn-text">
-                                            <i class="fas fa-play"></i> Start Recognition
-                                        </span>
-                                    </button>
-                                    
-                                    <button id="stopBtn" class="btn btn-danger btn-capture" disabled>
-                                        <span class="btn-text">
-                                            <i class="fas fa-stop"></i> Stop Recognition
-                                        </span>
-                                    </button>
-                                    
-                                    <button id="markAttendanceBtn" class="btn btn-primary btn-capture" disabled>
-                                        <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
-                                        <span class="btn-text">
-                                            <i class="fas fa-check"></i> Mark Attendance
-                                        </span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Mark Attendance</h3>
+                    <small>Position your face in front of the camera</small>
+                </div>
+                <div class="card-body">
+                    <div class="text-center">
+                        <video id="video" width="640" height="480" autoplay style="border: 2px solid #ddd; border-radius: 8px;"></video>
+                        <canvas id="canvas" width="640" height="480" style="display:none;"></canvas>
                     </div>
                     
-                    <!-- Control Panel -->
-                    <div class="col-md-4">
-                        <!-- Recognition Settings -->
-                        <div class="card mb-3">
-                            <div class="card-header">
-                                <h6><i class="fas fa-sliders-h"></i> Recognition Settings</h6>
-                            </div>
-                            <div class="card-body">
-                                <div class="mb-3">
-                                    <label for="thresholdSlider" class="form-label">
-                                        Similarity Threshold: <span id="thresholdValue">0.70</span>
-                                    </label>
-                                    <input type="range" class="form-range" id="thresholdSlider" 
-                                           min="0.5" max="0.95" step="0.05" value="0.70">
-                                    <div class="form-text">Higher = more strict matching</div>
-                                </div>
-                                
-                                <div class="mb-3">
-                                    <label for="intervalSelect" class="form-label">Recognition Interval</label>
-                                    <select class="form-select" id="intervalSelect">
-                                        <option value="500">Every 0.5 seconds</option>
-                                        <option value="1000" selected>Every 1 second</option>
-                                        <option value="2000">Every 2 seconds</option>
-                                        <option value="3000">Every 3 seconds</option>
-                                    </select>
-                                </div>
-                                
-                                <div class="form-check">
-                                    <input class="form-check-input" type="checkbox" id="autoMarkCheck" checked>
-                                    <label class="form-check-label" for="autoMarkCheck">
-                                        Auto-mark attendance
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Performance Stats -->
-                        <div class="card mb-3">
-                            <div class="card-header">
-                                <h6><i class="fas fa-chart-line"></i> Performance</h6>
-                            </div>
-                            <div class="card-body">
-                                <div class="row text-center">
-                                    <div class="col-6 mb-2">
-                                        <div class="stat-item">
-                                            <div class="stat-value" id="avgFps">--</div>
-                                            <div class="stat-label">Avg FPS</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6 mb-2">
-                                        <div class="stat-item">
-                                            <div class="stat-value" id="avgProcessingTime">--</div>
-                                            <div class="stat-label">Avg Time</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6">
-                                        <div class="stat-item">
-                                            <div class="stat-value" id="detectedFaces">--</div>
-                                            <div class="stat-label">Faces</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6">
-                                        <div class="stat-item">
-                                            <div class="stat-value" id="recognizedCount">--</div>
-                                            <div class="stat-label">Recognized</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Current Session -->
-                        <div class="card">
-                            <div class="card-header">
-                                <h6><i class="fas fa-users"></i> Current Session</h6>
-                            </div>
-                            <div class="card-body">
-                                <div id="recognizedStudents" class="recognized-list">
-                                    <div class="text-muted text-center">
-                                        <i class="fas fa-user-clock"></i>
-                                        <div>No students detected yet</div>
-                                    </div>
-                                </div>
-                            </div>
+                    <div class="mt-3 text-center">
+                        <button id="startBtn" class="btn btn-success btn-lg me-2" onclick="startCamera()">
+                            <i class="fas fa-camera"></i> Start Camera
+                        </button>
+                        <button id="stopBtn" class="btn btn-danger btn-lg" onclick="stopCamera()" disabled>
+                            <i class="fas fa-stop"></i> Stop Camera
+                        </button>
+                    </div>
+                    
+                    <div id="status" class="mt-3 text-center">
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle"></i> Click "Start Camera" to begin attendance marking
                         </div>
                     </div>
                 </div>
-                
-                <!-- Attendance History -->
-                <div class="row mt-4">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <h5><i class="fas fa-history"></i> Today's Attendance</h5>
-                                <button id="refreshAttendanceBtn" class="btn btn-outline-primary btn-sm">
-                                    <i class="fas fa-sync"></i> Refresh
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-striped" id="attendanceTable">
-                                        <thead>
-                                            <tr>
-                                                <th>Student ID</th>
-                                                <th>Time</th>
-                                                <th>Status</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr>
-                                                <td colspan="3" class="text-center text-muted">No attendance records for today</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
+            </div>
+            
+            <!-- Session Info Card -->
+            <div class="card mt-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">Current Session</h5>
+                </div>
+                <div class="card-body">
+                    <div id="sessionInfo">
+                        <p class="mb-0">Loading session information...</p>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block extra_css %}
-<style>
-    .stat-item {
-        text-align: center;
-    }
-    
-    .stat-value {
-        font-size: 1.5rem;
-        font-weight: bold;
-        color: #007bff;
-    }
-    
-    .stat-label {
-        font-size: 0.8rem;
-        text-transform: uppercase;
-        color: #6c757d;
-    }
-    
-    .recognized-list {
-        max-height: 200px;
-        overflow-y: auto;
-    }
-    
-    .student-item {
-        display: flex;
-        justify-content-between;
-        align-items: center;
-        padding: 8px;
-        margin-bottom: 5px;
-        background-color: #f8f9fa;
-        border-radius: 5px;
-    }
-    
-    .student-item.new {
-        background-color: #d4edda;
-        border-left: 4px solid #28a745;
-    }
-    
-    .confidence-bar {
-        width: 60px;
-        height: 6px;
-        background-color: #e9ecef;
-        border-radius: 3px;
-        overflow: hidden;
-    }
-    
-    .confidence-fill {
-        height: 100%;
-        transition: width 0.3s ease;
-    }
-    
-    .confidence-high { background-color: #28a745; }
-    .confidence-medium { background-color: #ffc107; }
-    .confidence-low { background-color: #dc3545; }
-</style>
-{% endblock %}
-
-{% block extra_js %}
 <script>
-    let recognitionActive = false;
-    let recognitionInterval = null;
-    let currentRecognizedStudents = new Set();
-    let sessionStats = {
-        totalFaces: 0,
-        totalRecognized: 0,
-        fps: [],
-        processingTimes: []
-    };
+let video = document.getElementById('video');
+let canvas = document.getElementById('canvas');
+let ctx = canvas.getContext('2d');
+let processingInterval;
+let stream;
+
+async function startCamera() {
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { 
+                width: 640, 
+                height: 480,
+                facingMode: 'user'
+            } 
+        });
+        video.srcObject = stream;
+        
+        document.getElementById('startBtn').disabled = true;
+        document.getElementById('stopBtn').disabled = false;
+        
+        updateStatus('Camera started. Position your face in the frame.', 'info');
+        
+        // Start processing frames
+        processingInterval = setInterval(processFrame, 1000); // Process every second
+        
+    } catch (err) {
+        console.error('Error accessing camera:', err);
+        updateStatus('Error accessing camera: ' + err.message, 'danger');
+    }
+}
+
+function stopCamera() {
+    if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+    }
     
-    document.addEventListener('DOMContentLoaded', function() {
-        // Event listeners
-        document.getElementById('startBtn').addEventListener('click', startRecognition);
-        document.getElementById('stopBtn').addEventListener('click', stopRecognition);
-        document.getElementById('markAttendanceBtn').addEventListener('click', markAttendance);
-        document.getElementById('refreshAttendanceBtn').addEventListener('click', loadTodaysAttendance);
-        
-        // Settings listeners
-        document.getElementById('thresholdSlider').addEventListener('input', updateThreshold);
-        document.getElementById('intervalSelect').addEventListener('change', updateInterval);
-        
-        // Load today's attendance on page load
-        loadTodaysAttendance();
+    if (processingInterval) {
+        clearInterval(processingInterval);
+    }
+    
+    document.getElementById('startBtn').disabled = false;
+    document.getElementById('stopBtn').disabled = true;
+    
+    updateStatus('Camera stopped.', 'secondary');
+    
+    // Notify server to stop camera processing
+    fetch('/stop_camera', {
+        method: 'POST'
     });
-    
-    async function startRecognition() {
-        setLoading('startBtn', true);
+}
+
+function processFrame() {
+    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        ctx.drawImage(video, 0, 0, 640, 480);
         
-        try {
-            await initCamera();
-            
-            recognitionActive = true;
-            document.getElementById('startBtn').disabled = true;
-            document.getElementById('stopBtn').disabled = false;
-            document.getElementById('statusBadge').className = 'badge bg-success';
-            document.getElementById('statusBadge').textContent = 'Active';
-            
-            const interval = parseInt(document.getElementById('intervalSelect').value);
-            recognitionInterval = setInterval(processFrame, interval);
-            
-            showAlert('Face recognition started!', 'success');
-            
-        } catch (error) {
-            showAlert('Failed to start recognition: ' + error.message, 'danger');
-        } finally {
-            setLoading('startBtn', false);
-        }
-    }
-    
-    function stopRecognition() {
-        recognitionActive = false;
-        
-        if (recognitionInterval) {
-            clearInterval(recognitionInterval);
-            recognitionInterval = null;
-        }
-        
-        document.getElementById('startBtn').disabled = false;
-        document.getElementById('stopBtn').disabled = true;
-        document.getElementById('markAttendanceBtn').disabled = currentRecognizedStudents.size === 0;
-        document.getElementById('statusBadge').className = 'badge bg-secondary';
-        document.getElementById('statusBadge').textContent = 'Stopped';
-        
-        // Remove face overlays
-        document.querySelectorAll('.face-overlay').forEach(el => el.remove());
-        
-        showAlert('Face recognition stopped.', 'info');
-    }
-    
-    async function processFrame() {
-        if (!recognitionActive) return;
-        
-        try {
-            const imageData = captureFrame();
-            const response = await apiRequest('/api/recognize', { image: imageData });
-            
-            if (response.success) {
-                updateStats(response.stats);
-                updateFaceOverlays(response.faces);
-                updateRecognizedStudents(response.faces);
+        canvas.toBlob(blob => {
+            if (blob) {
+                const formData = new FormData();
+                formData.append('frame', blob);
                 
-                // Auto-mark attendance if enabled
-                if (document.getElementById('autoMarkCheck').checked) {
-                    const newStudents = response.faces
-                        .filter(face => face.is_match && !currentRecognizedStudents.has(face.label))
-                        .map(face => face.label);
-                    
-                    if (newStudents.length > 0) {
-                        await autoMarkAttendance(newStudents);
+                fetch('/process_frame', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        if (data.person_name && data.person_name !== 'Unknown') {
+                            updateStatus('Attendance marked for: ' + data.person_name, 'success');
+                            loadSessionInfo(); // Refresh session info
+                        } else {
+                            updateStatus('Face detected but not recognized. Please ensure proper lighting.', 'warning');
+                        }
+                    } else {
+                        updateStatus(data.message || 'Processing frame...', 'info');
                     }
-                }
+                })
+                .catch(error => {
+                    console.error('Error processing frame:', error);
+                    updateStatus('Error processing frame', 'danger');
+                });
             }
-            
-        } catch (error) {
-            console.error('Recognition error:', error);
-        }
+        }, 'image/jpeg', 0.8);
     }
+}
+
+function updateStatus(message, type) {
+    const statusDiv = document.getElementById('status');
+    const alertClass = 'alert alert-' + type;
+    const icon = getIcon(type);
     
-    function updateStats(stats) {
-        sessionStats.fps.push(stats.fps);
-        sessionStats.processingTimes.push(stats.processing_time * 1000);
-        
-        // Keep only last 30 measurements
-        if (sessionStats.fps.length > 30) {
-            sessionStats.fps.shift();
-            sessionStats.processingTimes.shift();
-        }
-        
-        const avgFps = sessionStats.fps.reduce((a, b) => a + b, 0) / sessionStats.fps.length;
-        const avgTime = sessionStats.processingTimes.reduce((a, b) => a + b, 0) / sessionStats.processingTimes.length;
-        
-        document.getElementById('fpsCounter').textContent = `FPS: ${stats.fps.toFixed(1)}`;
-        document.getElementById('avgFps').textContent = avgFps.toFixed(1);
-        document.getElementById('avgProcessingTime').textContent = `${avgTime.toFixed(0)}ms`;
-    }
-    
-    function updateFaceOverlays(faces) {
-        drawFaceOverlays(faces);
-        
-        sessionStats.totalFaces = faces.length;
-        sessionStats.totalRecognized = faces.filter(f => f.is_match).length;
-        
-        document.getElementById('detectedFaces').textContent = sessionStats.totalFaces;
-        document.getElementById('recognizedCount').textContent = sessionStats.totalRecognized;
-    }
-    
-    function updateRecognizedStudents(faces) {
-        const recognizedFaces = faces.filter(face => face.is_match);
-        const container = document.getElementById('recognizedStudents');
-        
-        if (recognizedFaces.length === 0) {
-            if (currentRecognizedStudents.size === 0) {
-                container.innerHTML = `
-                    <div class="text-muted text-center">
-                        <i class="fas fa-user-clock"></i>
-                        <div>No students detected yet</div>
-                    </div>
-                `;
-            }
-            return;
-        }
-        
-        const studentsHtml = recognizedFaces.map(face => {
-            const isNew = !currentRecognizedStudents.has(face.label);
-            currentRecognizedStudents.add(face.label);
-            
-            const confidenceClass = face.confidence > 0.8 ? 'confidence-high' : 
-                                   face.confidence > 0.6 ? 'confidence-medium' : 'confidence-low';
-            
-            return `
-                <div class="student-item ${isNew ? 'new' : ''}">
-                    <div>
-                        <strong>${face.label}</strong>
-                        <div class="small text-muted">${(face.confidence * 100).toFixed(1)}% confidence</div>
-                    </div>
-                    <div class="confidence-bar">
-                        <div class="confidence-fill ${confidenceClass}" 
-                             style="width: ${face.confidence * 100}%"></div>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        
-        container.innerHTML = studentsHtml;
-        
-        // Enable mark attendance button
-        document.getElementById('markAttendanceBtn').disabled = false;
-    }
-    
-    async function markAttendance() {
-        if (currentRecognizedStudents.size === 0) {
-            showAlert('No students to mark attendance for', 'warning');
-            return;
-        }
-        
-        setLoading('markAttendanceBtn', true);
-        
-        try {
-            const response = await apiRequest('/api/mark_attendance', {
-                student_ids: Array.from(currentRecognizedStudents)
-            });
-            
-            if (response.success) {
-                showAlert(`Attendance marked for ${response.students.length} students`, 'success');
-                currentRecognizedStudents.clear();
-                document.getElementById('markAttendanceBtn').disabled = true;
-                loadTodaysAttendance(); // Refresh attendance table
+    statusDiv.innerHTML = '<div class="' + alertClass + '"><i class="' + icon + '"></i> ' + message + '</div>';
+}
+
+function getIcon(type) {
+    const icons = {
+        'success': 'fas fa-check-circle',
+        'danger': 'fas fa-exclamation-triangle',
+        'warning': 'fas fa-exclamation-circle',
+        'info': 'fas fa-info-circle',
+        'secondary': 'fas fa-stop-circle'
+    };
+    return icons[type] || 'fas fa-info-circle';
+}
+
+function loadSessionInfo() {
+    fetch('/current_session')
+        .then(response => response.json())
+        .then(data => {
+            const sessionDiv = document.getElementById('sessionInfo');
+            if (data.session_active) {
+                sessionDiv.innerHTML = '<div class="row"><div class="col-md-6"><strong>Session:</strong> ' + data.session_date + '</div><div class="col-md-6"><strong>Status:</strong> <span class="badge bg-success">Active</span></div></div><div class="row mt-2"><div class="col-md-6"><strong>Total Present:</strong> ' + data.total_present + '</div><div class="col-md-6"><strong>Last Updated:</strong> ' + (data.last_updated || 'Never') + '</div></div>';
             } else {
-                showAlert('Failed to mark attendance: ' + response.message, 'danger');
+                sessionDiv.innerHTML = '<div class="text-center"><span class="badge bg-warning">No Active Session</span><p class="mt-2 mb-0">Contact administrator to start attendance session</p></div>';
             }
-            
-        } catch (error) {
-            showAlert('Error marking attendance: ' + error.message, 'danger');
-        } finally {
-            setLoading('markAttendanceBtn', false);
-        }
+        })
+        .catch(error => {
+            console.error('Error loading session info:', error);
+            document.getElementById('sessionInfo').innerHTML = '<div class="text-center text-muted"><i class="fas fa-exclamation-triangle"></i> Error loading session information</div>';
+        });
+}
+
+// Load session info on page load
+document.addEventListener('DOMContentLoaded', function() {
+    loadSessionInfo();
+});
+
+// Handle page visibility changes
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden && stream) {
+        stopCamera();
     }
-    
-    async function autoMarkAttendance(studentIds) {
-        try {
-            const response = await apiRequest('/api/mark_attendance', {
-                student_ids: studentIds
-            });
-            
-            if (response.success) {
-                showAlert(`Auto-marked: ${studentIds.join(', ')}`, 'success', true);
-                loadTodaysAttendance();
-            }
-            
-        } catch (error) {
-            console.error('Auto-mark failed:', error);
-        }
+});
+
+// Handle beforeunload to cleanup
+window.addEventListener('beforeunload', function() {
+    if (stream) {
+        stopCamera();
     }
-    
-    async function loadTodaysAttendance() {
-        // This is a simplified version - in a real app, you'd have an API endpoint
-        // to get today's attendance records
-        try {
-            const tbody = document.querySelector('#attendanceTable tbody');
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="3" class="text-center text-muted">
-                        <i class="fas fa-info-circle"></i> 
-                        Attendance records are saved to CSV file
-                    </td>
-                </tr>
-            `;
-        } catch (error) {
-            console.error('Error loading attendance:', error);
-        }
-    }
-    
-    function updateThreshold() {
-        const value = document.getElementById('thresholdSlider').value;
-        document.getElementById('thresholdValue').textContent = parseFloat(value).toFixed(2);
-    }
-    
-    function updateInterval() {
-        if (recognitionActive && recognitionInterval) {
-            clearInterval(recognitionInterval);
-            const interval = parseInt(document.getElementById('intervalSelect').value);
-            recognitionInterval = setInterval(processFrame, interval);
-        }
-    }
+});
 </script>
+
+<style>
+.card {
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border: none;
+}
+
+.card-header {
+    border-bottom: none;
+}
+
+video {
+    max-width: 100%;
+    height: auto;
+}
+
+@media (max-width: 768px) {
+    video {
+        width: 100%;
+        height: auto;
+    }
+    
+    canvas {
+        width: 100%;
+        height: auto;
+    }
+}
+
+.btn-lg {
+    padding: 12px 24px;
+    font-size: 1.1rem;
+}
+
+.alert {
+    margin-bottom: 0;
+}
+
+.badge {
+    font-size: 0.9rem;
+}
+</style>
 {% endblock %}

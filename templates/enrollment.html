@@ -1,346 +1,296 @@
-{% extends "base.html" %}
-
-{% block title %}Student Enrollment - Face Recognition Attendance{% endblock %}
-
-{% block content %}
-<div class="row">
-    <div class="col-lg-10 mx-auto">
-        <div class="card">
-            <div class="card-header">
-                <h3><i class="fas fa-user-plus"></i> Student Enrollment</h3>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <!-- Camera Feed -->
-                    <div class="col-md-8">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5><i class="fas fa-camera"></i> Camera Feed</h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="video-container">
-                                    <video id="video" autoplay muted></video>
-                                </div>
-                                
-                                <div class="text-center mt-3">
-                                    <button id="initCameraBtn" class="btn btn-primary btn-capture">
-                                        <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
-                                        <span class="btn-text">
-                                            <i class="fas fa-video"></i> Start Camera
-                                        </span>
-                                    </button>
-                                    
-                                    <button id="captureBtn" class="btn btn-success btn-capture" disabled>
-                                        <span class="loading-spinner spinner-border spinner-border-sm me-2"></span>
-                                        <span class="btn-text">
-                                            <i class="fas fa-camera-retro"></i> Capture & Enroll
-                                        </span>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Enrollment Form -->
-                    <div class="col-md-4">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5><i class="fas fa-user-edit"></i> Enrollment Details</h5>
-                            </div>
-                            <div class="card-body">
-                                <form id="enrollmentForm">
-                                    <div class="mb-3">
-                                        <label for="studentId" class="form-label">Student ID</label>
-                                        <input type="text" class="form-control" id="studentId" 
-                                               placeholder="Enter student ID" required>
-                                        <div class="form-text">Unique identifier for the student</div>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label for="modelSelect" class="form-label">Recognition Model</label>
-                                        <select class="form-select" id="modelSelect">
-                                            {% for model in models %}
-                                            <option value="{{ model }}" {% if model == 'MobileNetV2' %}selected{% endif %}>
-                                                {{ model }}
-                                            </option>
-                                            {% endfor %}
-                                        </select>
-                                        <div class="form-text">AI model for face recognition</div>
-                                    </div>
-                                    
-                                    <button type="button" id="initModelBtn" class="btn btn-outline-primary btn-sm mb-3">
-                                        <i class="fas fa-sync"></i> Initialize Model
-                                    </button>
-                                    
-                                    <div class="alert alert-info">
-                                        <h6><i class="fas fa-info-circle"></i> Instructions:</h6>
-                                        <ol class="mb-0 small">
-                                            <li>Enter the student ID</li>
-                                            <li>Start the camera</li>
-                                            <li>Position face clearly in frame</li>
-                                            <li>Click "Capture & Enroll"</li>
-                                        </ol>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                        
-                        <!-- Quality Indicators -->
-                        <div class="card mt-3">
-                            <div class="card-header">
-                                <h6><i class="fas fa-chart-line"></i> Quality Check</h6>
-                            </div>
-                            <div class="card-body">
-                                <div class="row text-center">
-                                    <div class="col-6">
-                                        <div class="quality-indicator" id="faceSize">
-                                            <i class="fas fa-expand-alt fa-2x text-muted"></i>
-                                            <div class="small mt-1">Face Size</div>
-                                            <div class="badge bg-secondary">--</div>
-                                        </div>
-                                    </div>
-                                    <div class="col-6">
-                                        <div class="quality-indicator" id="imageQuality">
-                                            <i class="fas fa-eye fa-2x text-muted"></i>
-                                            <div class="small mt-1">Clarity</div>
-                                            <div class="badge bg-secondary">--</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- Enrolled Students -->
-                <div class="row mt-4">
-                    <div class="col-12">
-                        <div class="card">
-                            <div class="card-header d-flex justify-content-between align-items-center">
-                                <h5><i class="fas fa-users"></i> Enrolled Students</h5>
-                                <button id="refreshStudentsBtn" class="btn btn-outline-primary btn-sm">
-                                    <i class="fas fa-sync"></i> Refresh
-                                </button>
-                            </div>
-                            <div class="card-body">
-                                <div class="table-responsive">
-                                    <table class="table table-striped" id="studentsTable">
-                                        <thead>
-                                            <tr>
-                                                <th>Student ID</th>
-                                                <th>Samples</th>
-                                                <th>Model</th>
-                                                <th>Created</th>
-                                                <th>Last Updated</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr>
-                                                <td colspan="5" class="text-center text-muted">Loading...</td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Enrollment</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f5f7fa;
+            margin: 0;
+            padding: 0;
+        }
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 1rem;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+        .video-container {
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto 2rem;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        #video {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            margin: 0.5rem;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+        .btn-success { background: #28a745; color: white; }
+        .btn-primary { background: #007bff; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .controls { text-align: center; }
+        .nav-links a {
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            margin: 0.25rem;
+            background: #007bff;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>Student Enrollment</h1>
+        <div>
+            <span>Welcome, {{ current_user.username }}!</span>
+            <a href="{{ url_for('logout') }}" style="color: white; margin-left: 1rem;">Logout</a>
         </div>
-    </div>
-</div>
-{% endblock %}
+    </nav>
 
-{% block extra_js %}
-<script>
-    let currentModel = 'MobileNetV2';
-    let modelInitialized = false;
-    
-    document.addEventListener('DOMContentLoaded', function() {
-        // Event listeners
-        document.getElementById('initCameraBtn').addEventListener('click', handleInitCamera);
-        document.getElementById('captureBtn').addEventListener('click', handleCapture);
-        document.getElementById('initModelBtn').addEventListener('click', handleInitModel);
-        document.getElementById('refreshStudentsBtn').addEventListener('click', loadEnrolledStudents);
-        document.getElementById('modelSelect').addEventListener('change', handleModelChange);
-        
-        // Load enrolled students on page load
-        loadEnrolledStudents();
-    });
-    
-    async function handleInitCamera() {
-        setLoading('initCameraBtn', true);
-        
-        try {
-            await initCamera();
-            document.getElementById('captureBtn').disabled = false;
-            showAlert('Camera initialized successfully!', 'success');
-        } catch (error) {
-            showAlert('Failed to initialize camera: ' + error.message, 'danger');
-        } finally {
-            setLoading('initCameraBtn', false);
-        }
-    }
-    
-    async function handleCapture() {
-        const studentId = document.getElementById('studentId').value.trim();
-        
-        if (!studentId) {
-            showAlert('Please enter a student ID', 'warning');
-            return;
-        }
-        
-        if (!modelInitialized) {
-            showAlert('Please initialize the model first', 'warning');
-            return;
-        }
-        
-        setLoading('captureBtn', true);
-        
-        try {
-            const imageData = captureFrame();
+    <div class="container">
+        <div class="nav-links" style="margin-bottom: 2rem;">
+            <a href="{{ url_for('admin_dashboard') }}">← Back to Dashboard</a>
+            <a href="{{ url_for('view_attendance') }}">View Attendance</a>
+        </div>
+
+        <h3 style="text-align: center; margin-bottom: 2rem;">Enroll New Student</h3>
+
+        <div class="form-group">
+            <label for="studentId">Student ID:</label>
+            <input type="text" id="studentId" required>
+        </div>
+
+        <div style="text-align: center; margin: 1rem 0;" id="status">Ready</div>
+        <div style="text-align: center; margin: 1rem 0;" id="sampleCount">Samples: 0</div>
+
+        <div class="video-container">
+            <video id="video" autoplay muted playsinline></video>
+        </div>
+
+        <div class="controls">
+            <button id="startBtn" class="btn btn-success">Start Camera</button>
+            <button id="stopBtn" class="btn btn-danger" disabled>Stop Camera</button>
+            <button id="enrollBtn" class="btn btn-primary" disabled>Start Enrollment</button>
+            <button id="completeBtn" class="btn btn-primary" disabled>Complete</button>
+        </div>
+
+        <div id="messages"></div>
+    </div>
+
+    <script>
+        let video, canvas, ctx, stream;
+        let isProcessing = false;
+        let processingInterval;
+        let enrollmentActive = false;
+        let sampleCount = 0;
+
+        document.getElementById('startBtn').onclick = startCamera;
+        document.getElementById('stopBtn').onclick = stopCamera;
+        document.getElementById('enrollBtn').onclick = startEnrollment;
+        document.getElementById('completeBtn').onclick = completeEnrollment;
+
+        async function startCamera() {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            video = document.getElementById('video');
+            video.srcObject = stream;
             
-            const response = await apiRequest('/api/enroll', {
-                student_id: studentId,
-                image: imageData
+            canvas = document.createElement('canvas');
+            ctx = canvas.getContext('2d');
+            
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('stopBtn').disabled = false;
+            document.getElementById('enrollBtn').disabled = false;
+            
+            video.onloadedmetadata = () => {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+            };
+        }
+
+        function stopCamera() {
+            if (stream) stream.getTracks().forEach(track => track.stop());
+            if (processingInterval) clearInterval(processingInterval);
+            
+            enrollmentActive = false;
+            
+            // Call backend to stop camera and clear data
+            fetch('/stop_camera', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Stop camera response:', data);
+            })
+            .catch(error => {
+                console.error('Stop camera error:', error);
             });
             
-            if (response.success) {
-                showAlert(response.message, 'success');
-                updateQualityIndicators(response);
-                loadEnrolledStudents(); // Refresh the students table
-                
-                // Clear the student ID for next enrollment
-                document.getElementById('studentId').value = '';
-            } else {
-                showAlert(response.message, 'danger');
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('stopBtn').disabled = true;
+            document.getElementById('enrollBtn').disabled = true;
+            document.getElementById('completeBtn').disabled = true;
+            document.getElementById('status').textContent = 'Ready';
+        }
+
+        function startEnrollment() {
+            const studentId = document.getElementById('studentId').value.trim();
+            if (!studentId) {
+                alert('Please enter Student ID');
+                return;
             }
             
-        } catch (error) {
-            showAlert('Enrollment failed: ' + error.message, 'danger');
-        } finally {
-            setLoading('captureBtn', false);
-        }
-    }
-    
-    async function handleInitModel() {
-        const selectedModel = document.getElementById('modelSelect').value;
-        
-        try {
-            showAlert('Initializing model...', 'info');
-            
-            const response = await apiRequest('/api/initialize_model', {
-                model: selectedModel
+            fetch('/start_enrollment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ student_id: studentId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Start enrollment response:', data);
+                if (data.status === 'success') {
+                    enrollmentActive = true;
+                    sampleCount = 0;
+                    document.getElementById('enrollBtn').disabled = true;
+                    document.getElementById('completeBtn').disabled = false;
+                    document.getElementById('status').textContent = 'Enrollment Active';
+                    processingInterval = setInterval(processFrame, 1000);
+                    showMessage('Enrollment started! Look at the camera', 'success');
+                } else {
+                    showMessage(data.message || 'Failed to start enrollment', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Enrollment error:', error);
+                showMessage('Failed to start enrollment', 'error');
             });
+        }
+
+        function processFrame() {
+            if (!video || video.readyState !== 4 || isProcessing || !enrollmentActive) return;
             
-            if (response.success) {
-                currentModel = selectedModel;
-                modelInitialized = true;
-                showAlert(response.message, 'success');
-            } else {
-                showAlert('Model initialization failed: ' + response.message, 'danger');
-                modelInitialized = false;
+            isProcessing = true;
+            document.getElementById('status').textContent = 'Processing...';
+            
+            ctx.drawImage(video, 0, 0);
+            const imageData = canvas.toDataURL('image/jpeg', 0.8);
+            
+            fetch('/process_frame', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ image: imageData, mode: 'enrollment' })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Process frame response:', data);
+                if (data.status === 'success') {
+                    const result = data.result;
+                    sampleCount = result.samples || 0;
+                    document.getElementById('sampleCount').textContent = `Samples: ${sampleCount}`;
+                    
+                    if (result.faces > 0) {
+                        document.getElementById('status').textContent = `Face detected! Samples: ${sampleCount}`;
+                    } else {
+                        document.getElementById('status').textContent = 'No face detected';
+                    }
+                    
+                    if (sampleCount >= 10) {
+                        showMessage('Good! You can complete enrollment now', 'success');
+                    }
+                } else {
+                    document.getElementById('status').textContent = 'Processing error';
+                    console.error('Processing error:', data.message);
+                }
+                isProcessing = false;
+            })
+            .catch(error => {
+                console.error('Frame processing error:', error);
+                document.getElementById('status').textContent = 'Connection error';
+                isProcessing = false;
+            });
+        }
+
+        function completeEnrollment() {
+            if (sampleCount < 3) {
+                showMessage('Need at least 3 samples to complete enrollment', 'error');
+                return;
             }
             
-        } catch (error) {
-            showAlert('Model initialization error: ' + error.message, 'danger');
-            modelInitialized = false;
+            fetch('/complete_enrollment', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Complete enrollment response:', data);
+                if (data.status === 'success') {
+                    showMessage(data.message, 'success');
+                    enrollmentActive = false;
+                    if (processingInterval) clearInterval(processingInterval);
+                    document.getElementById('enrollBtn').disabled = false;
+                    document.getElementById('completeBtn').disabled = true;
+                    document.getElementById('studentId').value = '';
+                    document.getElementById('status').textContent = 'Ready';
+                    document.getElementById('sampleCount').textContent = 'Samples: 0';
+                    sampleCount = 0;
+                } else {
+                    showMessage(data.message || 'Failed to complete enrollment', 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Complete enrollment error:', error);
+                showMessage('Failed to complete enrollment', 'error');
+            });
         }
-    }
-    
-    function handleModelChange() {
-        modelInitialized = false;
-        showAlert('Model changed. Please click "Initialize Model" to load the new model.', 'info');
-    }
-    
-    async function loadEnrolledStudents() {
-        try {
-            const response = await fetch('/api/students');
-            const data = await response.json();
-            
-            const tbody = document.querySelector('#studentsTable tbody');
-            
-            if (data.success && data.students.length > 0) {
-                tbody.innerHTML = data.students.map(student => `
-                    <tr>
-                        <td><strong>${student.id}</strong></td>
-                        <td><span class="badge bg-primary">${student.samples}</span></td>
-                        <td><span class="badge bg-info">${student.model}</span></td>
-                        <td class="small text-muted">${formatDate(student.created)}</td>
-                        <td class="small text-muted">${formatDate(student.last_updated)}</td>
-                    </tr>
-                `).join('');
-            } else {
-                tbody.innerHTML = `
-                    <tr>
-                        <td colspan="5" class="text-center text-muted">
-                            <i class="fas fa-user-slash"></i> No students enrolled yet
-                        </td>
-                    </tr>
-                `;
-            }
-            
-        } catch (error) {
-            console.error('Error loading students:', error);
-            document.querySelector('#studentsTable tbody').innerHTML = `
-                <tr>
-                    <td colspan="5" class="text-center text-danger">
-                        <i class="fas fa-exclamation-triangle"></i> Error loading students
-                    </td>
-                </tr>
-            `;
+
+        function showMessage(message, type) {
+            document.getElementById('messages').innerHTML = 
+                `<div style="padding: 0.5rem; margin: 0.5rem 0; border-radius: 5px; 
+                 background: ${type === 'success' ? '#d4edda' : '#f8d7da'}; 
+                 color: ${type === 'success' ? '#155724' : '#721c24'};">
+                 ${message}</div>`;
         }
-    }
-    
-    function updateQualityIndicators(response) {
-        // Update face size indicator
-        const faceArea = response.face_area || 0;
-        const faceSizeElement = document.querySelector('#faceSize .badge');
-        const faceSizeIcon = document.querySelector('#faceSize i');
-        
-        if (faceArea >= 5000) {
-            faceSizeElement.className = 'badge bg-success';
-            faceSizeElement.textContent = 'Good';
-            faceSizeIcon.className = 'fas fa-expand-alt fa-2x text-success';
-        } else if (faceArea >= 2500) {
-            faceSizeElement.className = 'badge bg-warning';
-            faceSizeElement.textContent = 'OK';
-            faceSizeIcon.className = 'fas fa-expand-alt fa-2x text-warning';
-        } else {
-            faceSizeElement.className = 'badge bg-danger';
-            faceSizeElement.textContent = 'Small';
-            faceSizeIcon.className = 'fas fa-expand-alt fa-2x text-danger';
-        }
-        
-        // Update quality indicator
-        const qualityScore = response.quality_score || 0;
-        const qualityElement = document.querySelector('#imageQuality .badge');
-        const qualityIcon = document.querySelector('#imageQuality i');
-        
-        if (qualityScore >= 200) {
-            qualityElement.className = 'badge bg-success';
-            qualityElement.textContent = 'Excellent';
-            qualityIcon.className = 'fas fa-eye fa-2x text-success';
-        } else if (qualityScore >= 100) {
-            qualityElement.className = 'badge bg-warning';
-            qualityElement.textContent = 'Good';
-            qualityIcon.className = 'fas fa-eye fa-2x text-warning';
-        } else {
-            qualityElement.className = 'badge bg-danger';
-            qualityElement.textContent = 'Blurry';
-            qualityIcon.className = 'fas fa-eye fa-2x text-danger';
-        }
-    }
-    
-    function formatDate(dateString) {
-        if (!dateString || dateString === 'Unknown') return 'Unknown';
-        
-        try {
-            const date = new Date(dateString);
-            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
-        } catch {
-            return dateString;
-        }
-    }
-</script>
-{% endblock %}
+    </script>
+</body>
+</html>

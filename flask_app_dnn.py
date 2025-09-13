@@ -1,11 +1,21 @@
-from flask import Flask, render_template, request, jsonify, Response
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, flash, session
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
+from flask_wtf import FlaskForm
+from wtforms import StringField, PasswordField, SelectField, SubmitField
+from wtforms.validators import DataRequired, Length
+from werkzeug.security import generate_password_hash, check_password_hash
+from functools import wraps
 import cv2
 import os
 import pickle
 import numpy as np
 import subprocess
 import platform
+import base64
+import io
+from PIL import Image
 from datetime import datetime
 from sklearn.preprocessing import normalize
 import tensorflow as tf
@@ -28,10 +38,62 @@ tf.get_logger().setLevel('ERROR')
 app = Flask(__name__)
 CORS(app)
 
+# Configuration
+app.config['SECRET_KEY'] = 'your-secret-key-change-in-production'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///attendance.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Initialize extensions
+db = SQLAlchemy(app)
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access this page.'
+
+# ---------------- DATABASE MODELS ----------------
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(120), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='student')  # 'student' or 'admin'
+    
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+    
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# ---------------- FORMS ----------------
+class LoginForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
+    password = PasswordField('Password', validators=[DataRequired()])
+    submit = SubmitField('Login')
+
+class RegisterForm(FlaskForm):
+    username = StringField('Username', validators=[DataRequired(), Length(min=4, max=20)])
+    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
+    role = SelectField('Role', choices=[('student', 'Student'), ('admin', 'Admin')], default='student')
+    submit = SubmitField('Register')
+
+# ---------------- DECORATORS ----------------
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or current_user.role != 'admin':
+            flash('Access denied. Admin privileges required.', 'error')
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
 # ---------------- CONFIG ----------------
 DATA_DIR = "data"
 EMBEDDINGS_FILE = os.path.join(DATA_DIR, "embeddings.pkl")
 ATTENDANCE_FILE = os.path.join(DATA_DIR, "attendance.csv")
+SESSIONS_FILE = os.path.join(DATA_DIR, "sessions.csv")
 
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -40,6 +102,10 @@ camera = None
 current_mode = None  # 'enrollment' or 'attendance'
 enrollment_data = {}
 attendance_data = set()
+
+# Session management variables
+current_session = None
+session_data = {}
 
 # ---------------- MODEL LOADING ----------------
 def load_model(model_name="ResNet50"):
@@ -245,6 +311,85 @@ def save_embeddings(embeddings):
     with open(EMBEDDINGS_FILE, "wb") as f:
         pickle.dump(embeddings, f)
 
+# ---------------- SESSION MANAGEMENT ----------------
+def create_attendance_session(session_name="Attendance Session"):
+    """Create a new attendance session"""
+    global current_session, session_data
+    
+    session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
+    current_session = {
+        'session_id': session_id,
+        'name': session_name,
+        'start_time': datetime.now(),
+        'end_time': None,
+        'attendees': {},  # {student_id: {'in_time': datetime, 'out_time': datetime}}
+        'absentees': set(),
+        'status': 'active'
+    }
+    
+    session_data[session_id] = current_session
+    return session_id
+
+def end_attendance_session():
+    """End the current attendance session"""
+    global current_session
+    
+    if current_session:
+        current_session['end_time'] = datetime.now()
+        current_session['status'] = 'completed'
+        
+        # Mark absent students
+        all_students = set(load_embeddings().keys())
+        present_students = set(current_session['attendees'].keys())
+        absent_students = all_students - present_students
+        current_session['absentees'] = absent_students
+        
+        # Save session to file
+        save_session_to_file(current_session)
+        
+        return current_session['session_id']
+    return None
+
+def mark_student_attendance(student_id, action='in'):
+    """Mark student in/out time"""
+    global current_session
+    
+    if not current_session:
+        return False
+    
+    if student_id not in current_session['attendees']:
+        current_session['attendees'][student_id] = {'in_time': None, 'out_time': None}
+    
+    if action == 'in' and not current_session['attendees'][student_id]['in_time']:
+        current_session['attendees'][student_id]['in_time'] = datetime.now()
+    elif action == 'out':
+        current_session['attendees'][student_id]['out_time'] = datetime.now()
+    
+    return True
+
+def save_session_to_file(session):
+    """Save session data to CSV file"""
+    file_exists = os.path.exists(SESSIONS_FILE)
+    
+    with open(SESSIONS_FILE, "a", newline='') as f:
+        if not file_exists:
+            f.write("session_id,session_name,start_time,end_time,student_id,in_time,out_time,status\n")
+        
+        # Write attendees
+        for student_id, times in session['attendees'].items():
+            in_time = times['in_time'].strftime('%Y-%m-%d %H:%M:%S') if times['in_time'] else ''
+            out_time = times['out_time'].strftime('%Y-%m-%d %H:%M:%S') if times['out_time'] else ''
+            
+            f.write(f"{session['session_id']},{session['name']},{session['start_time'].strftime('%Y-%m-%d %H:%M:%S')},"
+                   f"{session['end_time'].strftime('%Y-%m-%d %H:%M:%S') if session['end_time'] else ''},"
+                   f"{student_id},{in_time},{out_time},present\n")
+        
+        # Write absentees
+        for student_id in session['absentees']:
+            f.write(f"{session['session_id']},{session['name']},{session['start_time'].strftime('%Y-%m-%d %H:%M:%S')},"
+                   f"{session['end_time'].strftime('%Y-%m-%d %H:%M:%S') if session['end_time'] else ''},"
+                   f"{student_id},,,absent\n")
+
 # ---------------- IMAGE PROCESSING ----------------
 def process_image_data(image_data, mode):
     """Process base64 image data from browser camera"""
@@ -273,6 +418,8 @@ def process_enrollment_frame(frame):
     faces = detect_faces(frame)
     result = {'faces': len(faces), 'samples': len(enrollment_data.get('embeddings', []))}
     
+    print(f"Enrollment processing: {len(faces)} faces detected, enrollment_data: {enrollment_data}")
+    
     if faces:
         # Extract all face images
         face_images = []
@@ -281,11 +428,14 @@ def process_enrollment_frame(frame):
             if face.size > 0:  # Check if face is valid
                 face_images.append(face)
         
+        print(f"Extracted {len(face_images)} valid face images")
+        
         # Process faces in batch for efficiency
         if face_images:
             if len(face_images) == 1:
                 # Single face - use regular method
                 embedding = get_embedding(face_images[0])
+                print(f"Generated embedding: {embedding is not None}")
                 if embedding is not None:
                     student_id = enrollment_data.get('student_id')
                     if student_id:
@@ -293,6 +443,7 @@ def process_enrollment_frame(frame):
                             enrollment_data['embeddings'] = []
                         enrollment_data['embeddings'].append(embedding)
                         result['samples'] = len(enrollment_data['embeddings'])
+                        print(f"Added embedding for {student_id}, total samples: {result['samples']}")
             else:
                 # Multiple faces - use batch processing
                 embeddings = get_embeddings_batch(face_images)
@@ -362,32 +513,196 @@ def recognize_face(embedding, stored_embeddings, threshold=0.6):
     
     if best_dist < threshold and best_match != "Unknown":
         attendance_data.add(best_match)
+        # Mark attendance in current session
+        mark_student_attendance(best_match, 'in')
         return [best_match]
     
     return []
 
-# ---------------- ROUTES ----------------
+# ---------------- AUTHENTICATION ROUTES ----------------
 @app.route('/')
 def index():
-    return render_template('index.html')
+    if current_user.is_authenticated and current_user.role == 'admin':
+        return redirect(url_for('admin_dashboard'))
+    # Default route for students - direct access to attendance
+    return redirect(url_for('attendance'))
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(username=form.username.data).first()
+        if user and user.check_password(form.password.data):
+            login_user(user)
+            next_page = request.args.get('next')
+            return redirect(next_page) if next_page else redirect(url_for('index'))
+        flash('Invalid username or password', 'error')
+    
+    return render_template('login.html', form=form)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    form = RegisterForm()
+    if form.validate_on_submit():
+        if User.query.filter_by(username=form.username.data).first():
+            flash('Username already exists', 'error')
+            return render_template('register.html', form=form)
+        
+        user = User(username=form.username.data, role=form.role.data)
+        user.set_password(form.password.data)
+        db.session.add(user)
+        db.session.commit()
+        
+        flash('Registration successful', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('register.html', form=form)
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('You have been logged out', 'info')
+    return redirect(url_for('login'))
+
+# ---------------- STUDENT ROUTES ----------------
+@app.route('/attendance')
+def attendance():
+    return render_template('attendance.html')
+
+# ---------------- ADMIN ROUTES ----------------
+@app.route('/admin')
+@login_required
+@admin_required
+def admin_dashboard():
+    return render_template('admin_dashboard.html')
+
+@app.route('/enrollment')
+@login_required
+@admin_required
+def enrollment():
+    return render_template('enrollment.html')
+
+@app.route('/config')
+@login_required  
+@admin_required
+def config():
+    # Default configuration values for the template
+    config_data = {
+        'model': 'ResNet50',
+        'threshold': 0.7,
+        'similarity_metric': 'cosine',
+        'max_faces': 10,
+        'frame_skip': 2,
+        'enable_gpu': False,
+        'log_level': 'INFO'
+    }
+    
+    # Available models list
+    models = ['ResNet50', 'VGGFace', 'FaceNet', 'DeepFace']
+    
+    return render_template('config.html', config=config_data, models=models)
+
+# ---------------- API ROUTES ----------------
 
 @app.route('/process_frame', methods=['POST'])
 def process_frame():
     global current_mode
     
-    data = request.json or {}
-    image_data = data.get('image')
-    mode = data.get('mode', 'attendance')
+    # Handle FormData from attendance page (blob frame) or JSON data
+    if 'frame' in request.files:
+        # FormData from attendance page
+        frame_file = request.files['frame']
+        if frame_file:
+            # Convert blob to base64
+            frame_data = frame_file.read()
+            import base64
+            image_data = base64.b64encode(frame_data).decode('utf-8')
+            mode = 'attendance'
+            
+            # Auto-set mode for attendance if not set
+            if current_mode is None:
+                current_mode = 'attendance'
+        else:
+            return jsonify({'status': 'error', 'message': 'No frame data provided'})
+    else:
+        # JSON data from other sources  
+        data = request.json or {}
+        image_data = data.get('image')
+        mode = data.get('mode', 'attendance')
+        
+        if not image_data:
+            return jsonify({'status': 'error', 'message': 'No image data provided'})
+        
+        # Check if camera/processing should be active for enrollment mode
+        if mode == 'enrollment' and current_mode is None:
+            return jsonify({'status': 'error', 'message': 'Camera not active for enrollment'})
+        
+        # Auto-set mode for attendance if not set
+        if current_mode is None and mode == 'attendance':
+            current_mode = 'attendance'
     
-    if not image_data:
-        return jsonify({'status': 'error', 'message': 'No image data provided'})
+    # Validate mode matches current mode (but allow attendance to auto-start)
+    if current_mode != mode and not (current_mode is None and mode == 'attendance'):
+        return jsonify({'status': 'error', 'message': f'Mode mismatch: expected {current_mode}, got {mode}'})
     
-    result = process_image_data(image_data, mode)
+    # Double-check current_mode before processing
+    if current_mode is None:
+        return jsonify({'status': 'error', 'message': 'Camera processing not available'})
     
-    if result is None:
-        return jsonify({'status': 'error', 'message': 'Failed to process image'})
-    
-    return jsonify({'status': 'success', 'result': result})
+    if current_mode == 'enrollment':
+        result = process_enrollment_frame(image_data)
+        if result is None:
+            return jsonify({'status': 'error', 'message': 'Failed to process enrollment frame'})
+        return result
+    else:
+        # Process attendance frame  
+        try:
+            # Convert base64 to image
+            import base64
+            import io
+            from PIL import Image
+            import numpy as np
+            
+            # Remove data:image/jpeg;base64, prefix if present
+            if ',' in image_data:
+                image_data = image_data.split(',')[1]
+                
+            image_bytes = base64.b64decode(image_data)
+            image = Image.open(io.BytesIO(image_bytes))
+            frame = np.array(image)
+            
+            result = process_attendance_frame(frame)
+            
+            if result is None:
+                return jsonify({'status': 'error', 'message': 'Failed to process attendance frame'})
+            
+            # Format response for frontend
+            if result['faces'] > 0 and result['recognized']:
+                person_name = result['recognized'][0]  # Take first recognized face
+                return jsonify({
+                    'status': 'success',
+                    'person_name': person_name,
+                    'message': f'Attendance marked for {person_name}'
+                })
+            elif result['faces'] > 0:
+                return jsonify({
+                    'status': 'success', 
+                    'person_name': 'Unknown',
+                    'message': 'Face detected but not recognized'
+                })
+            else:
+                return jsonify({
+                    'status': 'info',
+                    'message': 'No face detected in frame'
+                })
+                
+        except Exception as e:
+            print(f"Error processing attendance frame: {e}")
+            return jsonify({'status': 'error', 'message': 'Error processing image'})
 
 @app.route('/start_camera', methods=['POST'])
 def start_camera():
@@ -401,13 +716,32 @@ def start_camera():
 
 @app.route('/stop_camera', methods=['POST'])
 def stop_camera():
-    global current_mode
+    global current_mode, enrollment_data, attendance_data
+    
+    # Reset all processing states
     current_mode = None
-    return jsonify({'status': 'success', 'message': 'Camera stopped'})
+    
+    # Clear any incomplete enrollment data
+    if enrollment_data:
+        print(f"Clearing incomplete enrollment data for: {enrollment_data.get('student_id', 'unknown')}")
+        enrollment_data = {}
+    
+    # Keep attendance_data as it might be intentionally collected
+    # but log the current state
+    if attendance_data:
+        print(f"Current attendance data preserved: {len(attendance_data)} students")
+    
+    return jsonify({
+        'status': 'success', 
+        'message': 'Camera stopped gracefully',
+        'attendance_count': len(attendance_data)
+    })
 
 @app.route('/start_enrollment', methods=['POST'])
+@login_required
+@admin_required
 def start_enrollment():
-    global enrollment_data
+    global enrollment_data, current_mode
     
     data = request.json or {}
     student_id = data.get('student_id', '').strip()
@@ -416,12 +750,17 @@ def start_enrollment():
         return jsonify({'status': 'error', 'message': 'Student ID is required'})
     
     enrollment_data = {'student_id': student_id, 'embeddings': []}
+    current_mode = 'enrollment'  # Set current mode for frame processing
+    
+    print(f"Started enrollment for {student_id}, current_mode set to: {current_mode}")
     
     return jsonify({'status': 'success', 'message': f'Started enrollment for {student_id}'})
 
 @app.route('/complete_enrollment', methods=['POST'])
+@login_required
+@admin_required
 def complete_enrollment():
-    global enrollment_data
+    global enrollment_data, current_mode
     
     if 'student_id' not in enrollment_data or not enrollment_data.get('embeddings'):
         return jsonify({'status': 'error', 'message': 'No enrollment data found'})
@@ -437,8 +776,11 @@ def complete_enrollment():
     embeddings[student_id] = mean_embedding
     save_embeddings(embeddings)
     
-    # Clear enrollment data
+    # Clear enrollment data and mode
     enrollment_data = {}
+    current_mode = None
+    
+    print(f"Completed enrollment for {student_id} with {len(embeddings_list)} samples")
     
     return jsonify({
         'status': 'success', 
@@ -478,5 +820,114 @@ def clear_attendance():
     attendance_data.clear()
     return jsonify({'status': 'success', 'message': 'Attendance data cleared'})
 
+# ---------------- SESSION MANAGEMENT ROUTES ----------------
+@app.route('/start_session', methods=['POST'])
+@login_required
+@admin_required
+def start_session():
+    data = request.json or {}
+    session_name = data.get('session_name', f'Session_{datetime.now().strftime("%Y%m%d_%H%M")}')
+    
+    session_id = create_attendance_session(session_name)
+    
+    return jsonify({
+        'status': 'success',
+        'message': f'Started attendance session: {session_name}',
+        'session_id': session_id
+    })
+
+@app.route('/end_session', methods=['POST'])
+@login_required
+@admin_required
+def end_session():
+    session_id = end_attendance_session()
+    
+    if session_id:
+        return jsonify({
+            'status': 'success',
+            'message': f'Ended attendance session: {session_id}',
+            'session_id': session_id
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'No active session to end'
+        })
+
+@app.route('/current_session', methods=['GET'])
+def get_current_session():
+    global current_session
+    
+    if current_session and current_session['status'] == 'active':
+        # Return format expected by attendance.html JavaScript
+        return jsonify({
+            'session_active': True,
+            'session_date': current_session['start_time'].strftime('%Y-%m-%d'),
+            'session_name': current_session['name'],
+            'session_id': current_session['session_id'],
+            'total_present': len(current_session['attendees']),
+            'last_updated': datetime.now().strftime('%H:%M:%S'),
+            'start_time': current_session['start_time'].strftime('%Y-%m-%d %H:%M:%S'),
+            'status': current_session['status']
+        })
+    else:
+        return jsonify({
+            'session_active': False,
+            'session_date': None,
+            'session_name': None,
+            'total_present': 0,
+            'last_updated': None
+        })
+
+@app.route('/mark_out', methods=['POST'])
+def mark_out():
+    data = request.json or {}
+    student_id = data.get('student_id', '').strip()
+    
+    if not student_id:
+        return jsonify({'status': 'error', 'message': 'Student ID is required'})
+    
+    if mark_student_attendance(student_id, 'out'):
+        return jsonify({
+            'status': 'success',
+            'message': f'Marked out time for {student_id}'
+        })
+    else:
+        return jsonify({
+            'status': 'error',
+            'message': 'No active session or student not found'
+        })
+
+@app.route('/view_attendance')
+@login_required
+@admin_required
+def view_attendance():
+    return render_template('attendance_view.html')
+
+# ---------------- DATABASE INITIALIZATION ----------------
+def init_db():
+    """Initialize database and create default admin user"""
+    with app.app_context():
+        db.create_all()
+        
+        # Create default admin user if doesn't exist
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            admin = User(username='admin', role='admin')
+            admin.set_password('admin123')  # Change this in production!
+            db.session.add(admin)
+            db.session.commit()
+            print("Default admin user created: username='admin', password='admin123'")
+        
+        # Create default student user if doesn't exist
+        student = User.query.filter_by(username='student').first()
+        if not student:
+            student = User(username='student', role='student')
+            student.set_password('student123')  # Change this in production!
+            db.session.add(student)
+            db.session.commit()
+            print("Default student user created: username='student', password='student123'")
+
 if __name__ == '__main__':
+    init_db()
     app.run(debug=True, host='0.0.0.0', port=5000)

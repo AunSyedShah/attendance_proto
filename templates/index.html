@@ -139,6 +139,10 @@
         <div class="header">
             <h1>🎯 Face Recognition Attendance System</h1>
             <p>Advanced attendance tracking using AI-powered face recognition</p>
+            <div style="margin-top: 20px;">
+                <a href="/" style="display: inline-block; margin: 5px 10px; padding: 10px 20px; background-color: #007bff; color: white; text-decoration: none; border-radius: 5px;">🏠 Home</a>
+                <a href="/view_attendance" style="display: inline-block; margin: 5px 10px; padding: 10px 20px; background-color: #28a745; color: white; text-decoration: none; border-radius: 5px;">📊 View Attendance</a>
+            </div>
         </div>
 
         <!-- Camera Section -->
@@ -260,74 +264,128 @@
         }
 
         function processFrame() {
-            if (!videoElement || !currentMode) return;
+            // Multiple safety checks to prevent processing when camera is stopped
+            if (!videoElement || !currentMode || !stream || !processingInterval) {
+                return;
+            }
             
-            // Draw video frame to canvas
-            ctx.drawImage(videoElement, 0, 0, 640, 480);
+            // Check if video is actually playing
+            if (videoElement.paused || videoElement.ended || !videoElement.srcObject) {
+                return;
+            }
             
-            // Get image data as base64
-            const imageData = canvas.toDataURL('image/jpeg', 0.8);
-            
-            // Send to backend for processing
-            fetch('/process_frame', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    image: imageData,
-                    mode: currentMode
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.status === 'success') {
-                    updateFaceInfo(data.result);
-                    
-                    // Auto-refresh attendance list if in attendance mode
-                    if (currentMode === 'attendance' && data.result.recognized && data.result.recognized.length > 0) {
-                        getAttendance();
-                    }
+            try {
+                // Draw video frame to canvas
+                ctx.drawImage(videoElement, 0, 0, 640, 480);
+                
+                // Get image data as base64
+                const imageData = canvas.toDataURL('image/jpeg', 0.8);
+                
+                // Double-check mode before sending request
+                if (!currentMode) {
+                    return;
                 }
-            })
-            .catch(error => {
-                console.error('Frame processing error:', error);
-            });
+                
+                // Send to backend for processing
+                fetch('/process_frame', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        image: imageData,
+                        mode: currentMode
+                    })
+                })
+                .then(response => {
+                    // Check if camera was stopped during the request
+                    if (!currentMode) {
+                        return;
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Final check before processing response
+                    if (!currentMode || !data) {
+                        return;
+                    }
+                    
+                    if (data.status === 'success') {
+                        updateFaceInfo(data.result);
+                        
+                        // Auto-refresh attendance list if in attendance mode
+                        if (currentMode === 'attendance' && data.result.recognized && data.result.recognized.length > 0) {
+                            getAttendance();
+                        }
+                    }
+                })
+                .catch(error => {
+                    // Only log error if camera is still supposed to be running
+                    if (currentMode) {
+                        console.error('Frame processing error:', error);
+                    }
+                });
+            } catch (error) {
+                if (currentMode) {
+                    console.error('Canvas processing error:', error);
+                }
+            }
         }
 
         function stopCamera() {
+            // Set mode to null first to prevent any ongoing processing
             currentMode = null;
             
-            // Stop processing interval
+            // Stop processing interval immediately
             if (processingInterval) {
                 clearInterval(processingInterval);
                 processingInterval = null;
             }
             
-            // Stop video stream
+            // Stop all video stream tracks
             if (stream) {
-                stream.getTracks().forEach(track => track.stop());
+                stream.getTracks().forEach(track => {
+                    track.stop();
+                    console.log('Stopped track:', track.kind);
+                });
                 stream = null;
             }
             
-            // Clear video element
+            // Clear video element and reset
             if (videoElement) {
                 videoElement.srcObject = null;
+                videoElement.pause();
+                // Clear any pending video events
+                videoElement.onloadedmetadata = null;
             }
             
-            // Hide face info
-            document.getElementById('face-info').style.display = 'none';
+            // Hide face info and reset UI
+            const faceInfo = document.getElementById('face-info');
+            if (faceInfo) {
+                faceInfo.style.display = 'none';
+                faceInfo.innerHTML = '<h3>Face Detection</h3><p>No faces detected</p>';
+            }
             
-            // Notify backend
+            // Reset canvas
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Notify backend about camera stop
             fetch('/stop_camera', {
                 method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
             })
             .then(response => response.json())
             .then(data => {
-                showStatus(data.message);
+                showStatus(data.message + ' - Camera stopped gracefully');
+                console.log('Camera stopped successfully');
             })
             .catch(error => {
-                showStatus('Error stopping camera: ' + error.message, 'error');
+                showStatus('Camera stopped locally (backend notification failed)', 'warning');
+                console.warn('Backend notification error:', error);
             });
         }
 

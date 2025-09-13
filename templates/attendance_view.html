@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Attendance View - AI Attendance Manager</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .session-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+            flex-wrap: wrap;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .btn-primary { background-color: #007bff; color: white; }
+        .btn-success { background-color: #28a745; color: white; }
+        .btn-danger { background-color: #dc3545; color: white; }
+        .btn-info { background-color: #17a2b8; color: white; }
+        .btn:hover { opacity: 0.8; }
+        .session-info {
+            background-color: #e9ecef;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .attendance-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+        .attendance-table th,
+        .attendance-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        .attendance-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+        }
+        .status-present { color: #28a745; font-weight: bold; }
+        .status-absent { color: #dc3545; font-weight: bold; }
+        .mark-out-form {
+            margin-top: 20px;
+            padding: 15px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+        .message {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            text-align: center;
+        }
+        .message.success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .message.error { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .nav-link {
+            display: inline-block;
+            margin: 10px;
+            padding: 10px 20px;
+            background-color: #6c757d;
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+        }
+        .nav-link:hover { background-color: #5a6268; color: white; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📊 Attendance Management</h1>
+            <div>
+                <a href="/" class="nav-link">🏠 Home</a>
+                <a href="/view_attendance" class="nav-link">📋 View Attendance</a>
+            </div>
+        </div>
+
+        <div class="session-controls">
+            <input type="text" id="sessionName" placeholder="Session Name" value="">
+            <button class="btn btn-success" onclick="startSession()">▶️ Start Session</button>
+            <button class="btn btn-danger" onclick="endSession()">⏹️ End Session</button>
+            <button class="btn btn-info" onclick="refreshSession()">🔄 Refresh</button>
+        </div>
+
+        <div id="sessionInfo" class="session-info" style="display: none;">
+            <h3>Current Session</h3>
+            <div id="sessionDetails"></div>
+        </div>
+
+        <div class="mark-out-form">
+            <h3>Mark Out Time</h3>
+            <div class="form-group">
+                <label for="studentIdOut">Student ID:</label>
+                <input type="text" id="studentIdOut" placeholder="Enter Student ID to mark out">
+            </div>
+            <button class="btn btn-primary" onclick="markOut()">⏰ Mark Out</button>
+        </div>
+
+        <div id="message" class="message" style="display: none;"></div>
+
+        <div id="attendanceSection">
+            <h3>Current Session Attendance</h3>
+            <table class="attendance-table" id="attendanceTable">
+                <thead>
+                    <tr>
+                        <th>Student ID</th>
+                        <th>In Time</th>
+                        <th>Out Time</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="attendanceBody">
+                    <tr>
+                        <td colspan="5" style="text-align: center; color: #6c757d;">No active session</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        function showMessage(text, type = 'success') {
+            const messageDiv = document.getElementById('message');
+            messageDiv.textContent = text;
+            messageDiv.className = `message ${type}`;
+            messageDiv.style.display = 'block';
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function startSession() {
+            const sessionName = document.getElementById('sessionName').value.trim() || 
+                              `Session_${new Date().toISOString().slice(0,16).replace('T', '_').replace(/:/g, '')}`;
+            
+            fetch('/start_session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ session_name: sessionName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showMessage(data.message, 'success');
+                    refreshSession();
+                } else {
+                    showMessage(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error starting session: ' + error, 'error');
+            });
+        }
+
+        function endSession() {
+            fetch('/end_session', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showMessage(data.message, 'success');
+                    refreshSession();
+                } else {
+                    showMessage(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error ending session: ' + error, 'error');
+            });
+        }
+
+        function markOut() {
+            const studentId = document.getElementById('studentIdOut').value.trim();
+            
+            if (!studentId) {
+                showMessage('Please enter a Student ID', 'error');
+                return;
+            }
+            
+            fetch('/mark_out', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ student_id: studentId })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showMessage(data.message, 'success');
+                    document.getElementById('studentIdOut').value = '';
+                    refreshSession();
+                } else {
+                    showMessage(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showMessage('Error marking out: ' + error, 'error');
+            });
+        }
+
+        function refreshSession() {
+            fetch('/current_session')
+            .then(response => response.json())
+            .then(data => {
+                const sessionInfo = document.getElementById('sessionInfo');
+                const sessionDetails = document.getElementById('sessionDetails');
+                const attendanceBody = document.getElementById('attendanceBody');
+                
+                if (data.session) {
+                    sessionInfo.style.display = 'block';
+                    sessionDetails.innerHTML = `
+                        <strong>Session ID:</strong> ${data.session.session_id}<br>
+                        <strong>Name:</strong> ${data.session.name}<br>
+                        <strong>Start Time:</strong> ${data.session.start_time}<br>
+                        <strong>Status:</strong> ${data.session.status}<br>
+                        <strong>Present Students:</strong> ${data.session.attendees_count}
+                    `;
+                    
+                    // Update attendance table
+                    attendanceBody.innerHTML = '';
+                    if (data.session.attendees.length > 0) {
+                        data.session.attendees.forEach(attendee => {
+                            const duration = calculateDuration(attendee.in_time, attendee.out_time);
+                            const status = attendee.out_time ? 'Present (Complete)' : 'Present (In Session)';
+                            const statusClass = 'status-present';
+                            
+                            const row = `
+                                <tr>
+                                    <td>${attendee.student_id}</td>
+                                    <td>${attendee.in_time || '-'}</td>
+                                    <td>${attendee.out_time || '-'}</td>
+                                    <td>${duration}</td>
+                                    <td class="${statusClass}">${status}</td>
+                                </tr>
+                            `;
+                            attendanceBody.innerHTML += row;
+                        });
+                    } else {
+                        attendanceBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6c757d;">No students present yet</td></tr>';
+                    }
+                } else {
+                    sessionInfo.style.display = 'none';
+                    attendanceBody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #6c757d;">No active session</td></tr>';
+                }
+            })
+            .catch(error => {
+                console.error('Error refreshing session:', error);
+            });
+        }
+
+        function calculateDuration(inTime, outTime) {
+            if (!inTime) return '-';
+            if (!outTime) return 'In Session';
+            
+            const inDate = new Date(inTime);
+            const outDate = new Date(outTime);
+            const duration = Math.floor((outDate - inDate) / 1000 / 60); // minutes
+            
+            if (duration < 60) {
+                return `${duration} min`;
+            } else {
+                const hours = Math.floor(duration / 60);
+                const minutes = duration % 60;
+                return `${hours}h ${minutes}m`;
+            }
+        }
+
+        // Auto-refresh every 30 seconds
+        setInterval(refreshSession, 30000);
+        
+        // Initial load
+        refreshSession();
+    </script>
+</body>
+</html>
