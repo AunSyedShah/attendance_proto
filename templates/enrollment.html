@@ -225,11 +225,10 @@
             .then(data => {
                 console.log('Process frame response:', data);
                 if (data.status === 'success') {
-                    const result = data.result;
-                    sampleCount = result.samples || 0;
+                    sampleCount = data.samples || 0;
                     document.getElementById('sampleCount').textContent = `Samples: ${sampleCount}`;
                     
-                    if (result.faces > 0) {
+                    if (data.faces > 0) {
                         document.getElementById('status').textContent = `Face detected! Samples: ${sampleCount}`;
                     } else {
                         document.getElementById('status').textContent = 'No face detected';

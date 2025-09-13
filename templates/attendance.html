@@ -118,7 +118,23 @@ function processFrame() {
                 .then(data => {
                     if (data.status === 'success') {
                         if (data.person_name && data.person_name !== 'Unknown') {
-                            updateStatus('Attendance marked for: ' + data.person_name, 'success');
+                            // Use enhanced message if available, otherwise fallback to basic message
+                            const message = data.message || ('Attendance marked for: ' + data.person_name);
+                            
+                            // Determine alert type based on daily attendance action
+                            let alertType = 'success';
+                            if (data.daily_attendance) {
+                                const action = data.daily_attendance.action;
+                                if (action === 'rejected') {
+                                    alertType = 'warning';
+                                } else if (action === 'completed') {
+                                    alertType = 'info';
+                                } else if (action === 'out') {
+                                    alertType = 'info';
+                                }
+                            }
+                            
+                            updateStatus(message, alertType);
                             loadSessionInfo(); // Refresh session info
                         } else {
                             updateStatus('Face detected but not recognized. Please ensure proper lighting.', 'warning');
@@ -160,11 +176,34 @@ function loadSessionInfo() {
         .then(response => response.json())
         .then(data => {
             const sessionDiv = document.getElementById('sessionInfo');
+            
+            // Create session info display
+            let sessionHtml = '';
             if (data.session_active) {
-                sessionDiv.innerHTML = '<div class="row"><div class="col-md-6"><strong>Session:</strong> ' + data.session_date + '</div><div class="col-md-6"><strong>Status:</strong> <span class="badge bg-success">Active</span></div></div><div class="row mt-2"><div class="col-md-6"><strong>Total Present:</strong> ' + data.total_present + '</div><div class="col-md-6"><strong>Last Updated:</strong> ' + (data.last_updated || 'Never') + '</div></div>';
+                sessionHtml = '<div class="row"><div class="col-md-6"><strong>Session:</strong> ' + data.session_date + '</div><div class="col-md-6"><strong>Status:</strong> <span class="badge bg-success">Active</span></div></div><div class="row mt-2"><div class="col-md-6"><strong>Total Present:</strong> ' + data.total_present + '</div><div class="col-md-6"><strong>Last Updated:</strong> ' + (data.last_updated || 'Never') + '</div></div>';
             } else {
-                sessionDiv.innerHTML = '<div class="text-center"><span class="badge bg-warning">No Active Session</span><p class="mt-2 mb-0">Contact administrator to start attendance session</p></div>';
+                sessionHtml = '<div class="text-center"><span class="badge bg-warning">No Active Session</span><p class="mt-2 mb-0">Contact administrator to start attendance session</p></div>';
             }
+            
+            // Add daily attendance summary
+            if (data.daily_attendance) {
+                const daily = data.daily_attendance;
+                sessionHtml += '<hr><div class="row"><div class="col-12"><h6 class="mb-2"><i class="fas fa-calendar-day"></i> Today\'s Attendance (' + daily.date + ')</h6></div></div>';
+                sessionHtml += '<div class="row"><div class="col-md-4"><small><strong>Total Students:</strong> ' + daily.total_students + '</small></div>';
+                sessionHtml += '<div class="col-md-4"><small><strong>Checked In:</strong> <span class="badge bg-success">' + daily.checked_in + '</span></small></div>';
+                sessionHtml += '<div class="col-md-4"><small><strong>Checked Out:</strong> <span class="badge bg-info">' + daily.checked_out + '</span></small></div></div>';
+                
+                if (daily.recent_activity && daily.recent_activity.length > 0) {
+                    sessionHtml += '<div class="mt-2"><small><strong>Recent Activity:</strong></small><ul class="list-unstyled mb-0" style="max-height: 100px; overflow-y: auto;">';
+                    daily.recent_activity.forEach(activity => {
+                        const badgeClass = activity.action === 'in' ? 'bg-success' : 'bg-info';
+                        sessionHtml += '<li><small>' + activity.student_id + ' <span class="badge ' + badgeClass + '">' + activity.action + '</span> at ' + activity.time + '</small></li>';
+                    });
+                    sessionHtml += '</ul></div>';
+                }
+            }
+            
+            sessionDiv.innerHTML = sessionHtml;
         })
         .catch(error => {
             console.error('Error loading session info:', error);

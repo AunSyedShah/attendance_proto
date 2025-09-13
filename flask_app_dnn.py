@@ -23,6 +23,7 @@ from tensorflow.keras.applications.resnet50 import ResNet50, preprocess_input
 from tensorflow.keras.preprocessing.image import img_to_array
 import threading
 import time
+import faiss
 import base64
 import io
 from PIL import Image
@@ -106,6 +107,186 @@ attendance_data = set()
 # Session management variables
 current_session = None
 session_data = {}
+
+# Daily attendance tracking - format: {date: {student_id: {'in_time': datetime, 'out_time': datetime}}}
+daily_attendance = {}
+
+# Store last daily attendance result for user feedback
+last_daily_result = None
+
+# Attendance file path
+DAILY_ATTENDANCE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'daily_attendance.csv')
+
+# FAISS index file path
+FAISS_INDEX_FILE = os.path.join(os.path.dirname(__file__), 'data', 'embeddings.faiss')
+FAISS_METADATA_FILE = os.path.join(os.path.dirname(__file__), 'data', 'embeddings_metadata.pkl')
+
+# ---------------- FAISS EMBEDDING MANAGER ----------------
+class FAISSEmbeddingManager:
+    def __init__(self, embedding_dim=2048):
+        self.embedding_dim = embedding_dim
+        self.index = None
+        self.student_ids = []  # Map index position to student ID
+        self.load_index()
+    
+    def load_index(self):
+        """Load FAISS index and metadata from disk"""
+        try:
+            if os.path.exists(FAISS_INDEX_FILE) and os.path.exists(FAISS_METADATA_FILE):
+                # Load FAISS index
+                self.index = faiss.read_index(FAISS_INDEX_FILE)
+                
+                # Load student ID mapping
+                with open(FAISS_METADATA_FILE, 'rb') as f:
+                    self.student_ids = pickle.load(f)
+                
+                print(f"FAISS index loaded: {len(self.student_ids)} students, dimension {self.embedding_dim}")
+            else:
+                # Create new index
+                self.index = faiss.IndexFlatL2(self.embedding_dim)
+                self.student_ids = []
+                print("Created new FAISS index")
+                
+        except Exception as e:
+            print(f"Error loading FAISS index: {e}")
+            # Fallback to new index
+            self.index = faiss.IndexFlatL2(self.embedding_dim)
+            self.student_ids = []
+    
+    def save_index(self):
+        """Save FAISS index and metadata to disk"""
+        try:
+            # Ensure data directory exists
+            os.makedirs(os.path.dirname(FAISS_INDEX_FILE), exist_ok=True)
+            
+            # Save FAISS index
+            faiss.write_index(self.index, FAISS_INDEX_FILE)
+            
+            # Save student ID mapping
+            with open(FAISS_METADATA_FILE, 'wb') as f:
+                pickle.dump(self.student_ids, f)
+                
+            print(f"FAISS index saved: {len(self.student_ids)} students")
+        except Exception as e:
+            print(f"Error saving FAISS index: {e}")
+    
+    def add_embedding(self, student_id, embedding):
+        """Add or update embedding for a student"""
+        try:
+            # Ensure embedding is the right shape and type
+            embedding = np.array(embedding, dtype=np.float32).reshape(1, -1)
+            
+            # Check if student already exists
+            if student_id in self.student_ids:
+                # Remove old embedding
+                old_index = self.student_ids.index(student_id)
+                self.remove_embedding(student_id)
+            
+            # Add new embedding
+            self.index.add(embedding)
+            self.student_ids.append(student_id)
+            
+            print(f"Added embedding for {student_id} (total: {len(self.student_ids)})")
+            self.save_index()
+            
+        except Exception as e:
+            print(f"Error adding embedding for {student_id}: {e}")
+    
+    def remove_embedding(self, student_id):
+        """Remove embedding for a student (rebuild index without this student)"""
+        try:
+            if student_id not in self.student_ids:
+                return
+            
+            # Get all embeddings except the one to remove
+            all_embeddings = []
+            remaining_ids = []
+            
+            for i, sid in enumerate(self.student_ids):
+                if sid != student_id:
+                    # Get embedding from index
+                    embedding = self.index.reconstruct(i)
+                    all_embeddings.append(embedding)
+                    remaining_ids.append(sid)
+            
+            # Rebuild index
+            self.index = faiss.IndexFlatL2(self.embedding_dim)
+            if all_embeddings:
+                embeddings_array = np.array(all_embeddings, dtype=np.float32)
+                self.index.add(embeddings_array)
+            
+            self.student_ids = remaining_ids
+            self.save_index()
+            
+            print(f"Removed embedding for {student_id}")
+            
+        except Exception as e:
+            print(f"Error removing embedding for {student_id}: {e}")
+    
+    def search(self, query_embedding, k=1, threshold=0.6):
+        """Search for similar embeddings"""
+        try:
+            if self.index.ntotal == 0:
+                return [], []
+            
+            # Ensure query embedding is the right shape and type
+            query_embedding = np.array(query_embedding, dtype=np.float32).reshape(1, -1)
+            
+            # Search in FAISS index
+            distances, indices = self.index.search(query_embedding, min(k, len(self.student_ids)))
+            
+            # Convert to lists and filter by threshold
+            results = []
+            result_distances = []
+            
+            for dist, idx in zip(distances[0], indices[0]):
+                if idx != -1 and dist < threshold and idx < len(self.student_ids):
+                    results.append(self.student_ids[idx])
+                    result_distances.append(dist)
+            
+            return results, result_distances
+            
+        except Exception as e:
+            print(f"Error searching embeddings: {e}")
+            return [], []
+    
+    def get_all_embeddings(self):
+        """Get all embeddings as a dictionary (for compatibility)"""
+        try:
+            embeddings_dict = {}
+            for i, student_id in enumerate(self.student_ids):
+                embedding = self.index.reconstruct(i)
+                embeddings_dict[student_id] = embedding
+            return embeddings_dict
+        except Exception as e:
+            print(f"Error getting all embeddings: {e}")
+            return {}
+    
+    def migrate_from_pickle(self, pickle_file):
+        """Migrate embeddings from old pickle format to FAISS"""
+        try:
+            if os.path.exists(pickle_file):
+                with open(pickle_file, 'rb') as f:
+                    old_embeddings = pickle.load(f)
+                
+                print(f"Migrating {len(old_embeddings)} embeddings from pickle to FAISS...")
+                
+                # Clear current index
+                self.index = faiss.IndexFlatL2(self.embedding_dim)
+                self.student_ids = []
+                
+                # Add all embeddings
+                for student_id, embedding in old_embeddings.items():
+                    self.add_embedding(student_id, embedding)
+                
+                print("Migration completed successfully")
+                return True
+        except Exception as e:
+            print(f"Error migrating from pickle: {e}")
+        return False
+
+# Initialize FAISS manager
+faiss_manager = FAISSEmbeddingManager()
 
 # ---------------- MODEL LOADING ----------------
 def load_model(model_name="ResNet50"):
@@ -305,11 +486,31 @@ def get_embeddings_batch(face_images):
 
 # ---------------- DATA STORAGE ----------------
 def load_embeddings():
-    return pickle.load(open(EMBEDDINGS_FILE, "rb")) if os.path.exists(EMBEDDINGS_FILE) else {}
+    """Load embeddings using FAISS manager"""
+    global faiss_manager
+    
+    # Check if old pickle file exists and migrate
+    if os.path.exists(EMBEDDINGS_FILE) and not os.path.exists(FAISS_INDEX_FILE):
+        print("Migrating embeddings from pickle to FAISS...")
+        faiss_manager.migrate_from_pickle(EMBEDDINGS_FILE)
+        # Backup old file
+        backup_file = EMBEDDINGS_FILE + ".backup"
+        os.rename(EMBEDDINGS_FILE, backup_file)
+        print(f"Old embeddings backed up to {backup_file}")
+    
+    # Return embeddings as dictionary for compatibility
+    return faiss_manager.get_all_embeddings()
 
 def save_embeddings(embeddings):
-    with open(EMBEDDINGS_FILE, "wb") as f:
-        pickle.dump(embeddings, f)
+    """Save embeddings using FAISS manager"""
+    global faiss_manager
+    
+    # Clear current index and add all embeddings
+    faiss_manager.index = faiss.IndexFlatL2(faiss_manager.embedding_dim)
+    faiss_manager.student_ids = []
+    
+    for student_id, embedding in embeddings.items():
+        faiss_manager.add_embedding(student_id, embedding)
 
 # ---------------- SESSION MANAGEMENT ----------------
 def create_attendance_session(session_name="Attendance Session"):
@@ -390,6 +591,188 @@ def save_session_to_file(session):
                    f"{session['end_time'].strftime('%Y-%m-%d %H:%M:%S') if session['end_time'] else ''},"
                    f"{student_id},,,absent\n")
 
+# ---------------- DAILY ATTENDANCE SYSTEM ----------------
+def load_daily_attendance():
+    """Load daily attendance data from CSV file"""
+    global daily_attendance
+    
+    if not os.path.exists(DAILY_ATTENDANCE_FILE):
+        # Create the data directory if it doesn't exist
+        os.makedirs(os.path.dirname(DAILY_ATTENDANCE_FILE), exist_ok=True)
+        return {}
+    
+    daily_attendance = {}
+    try:
+        with open(DAILY_ATTENDANCE_FILE, "r") as f:
+            lines = f.readlines()
+            if len(lines) <= 1:  # Only header or empty
+                return {}
+            
+            for line in lines[1:]:  # Skip header
+                parts = line.strip().split(',')
+                if len(parts) >= 4:
+                    date, student_id, in_time_str, out_time_str = parts[:4]
+                    
+                    if date not in daily_attendance:
+                        daily_attendance[date] = {}
+                    
+                    daily_attendance[date][student_id] = {
+                        'in_time': datetime.strptime(in_time_str, '%Y-%m-%d %H:%M:%S') if in_time_str else None,
+                        'out_time': datetime.strptime(out_time_str, '%Y-%m-%d %H:%M:%S') if out_time_str else None
+                    }
+    except Exception as e:
+        print(f"Error loading daily attendance: {e}")
+        daily_attendance = {}
+    
+    return daily_attendance
+
+def save_daily_attendance():
+    """Save daily attendance data to CSV file"""
+    global daily_attendance
+    
+    try:
+        # Create the data directory if it doesn't exist
+        os.makedirs(os.path.dirname(DAILY_ATTENDANCE_FILE), exist_ok=True)
+        
+        with open(DAILY_ATTENDANCE_FILE, "w") as f:
+            f.write("date,student_id,in_time,out_time\n")
+            
+            for date, students in daily_attendance.items():
+                for student_id, times in students.items():
+                    in_time_str = times['in_time'].strftime('%Y-%m-%d %H:%M:%S') if times['in_time'] else ''
+                    out_time_str = times['out_time'].strftime('%Y-%m-%d %H:%M:%S') if times['out_time'] else ''
+                    f.write(f"{date},{student_id},{in_time_str},{out_time_str}\n")
+    except Exception as e:
+        print(f"Error saving daily attendance: {e}")
+
+def mark_daily_attendance(student_id):
+    """
+    Mark attendance for a student with automatic in/out detection and 1-minute threshold
+    Returns: dict with status info
+    """
+    global daily_attendance
+    
+    current_time = datetime.now()
+    today = current_time.strftime('%Y-%m-%d')
+    
+    # Initialize today's attendance if not exists
+    if today not in daily_attendance:
+        daily_attendance[today] = {}
+    
+    # Initialize student record for today if not exists
+    if student_id not in daily_attendance[today]:
+        daily_attendance[today][student_id] = {'in_time': None, 'out_time': None}
+    
+    student_today = daily_attendance[today][student_id]
+    
+    # Check if student has no record for today - mark as IN
+    if student_today['in_time'] is None:
+        student_today['in_time'] = current_time
+        save_daily_attendance()
+        
+        return {
+            'action': 'in',
+            'time': current_time.strftime('%H:%M:%S'),
+            'message': f'Time IN marked for {student_id}',
+            'student_id': student_id
+        }
+    
+    # Student has in_time, check if they can mark out (1-minute threshold)
+    elif student_today['out_time'] is None:
+        time_diff = (current_time - student_today['in_time']).total_seconds()
+        
+        if time_diff < 60:  # Less than 1 minute
+            return {
+                'action': 'rejected',
+                'message': f'Please wait {int(60 - time_diff)} seconds before marking time OUT',
+                'student_id': student_id,
+                'remaining_seconds': int(60 - time_diff)
+            }
+        
+        # Mark as OUT
+        student_today['out_time'] = current_time
+        save_daily_attendance()
+        
+        # Calculate total time spent
+        total_minutes = int((current_time - student_today['in_time']).total_seconds() / 60)
+        hours = total_minutes // 60
+        minutes = total_minutes % 60
+        
+        return {
+            'action': 'out',
+            'time': current_time.strftime('%H:%M:%S'),
+            'message': f'Time OUT marked for {student_id}',
+            'student_id': student_id,
+            'total_time': f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m",
+            'in_time': student_today['in_time'].strftime('%H:%M:%S'),
+            'out_time': current_time.strftime('%H:%M:%S')
+        }
+    
+    # Student already has both in and out time for today
+    else:
+        in_time_str = student_today['in_time'].strftime('%H:%M:%S')
+        out_time_str = student_today['out_time'].strftime('%H:%M:%S')
+        
+        return {
+            'action': 'completed',
+            'message': f'{student_id} already completed attendance today',
+            'student_id': student_id,
+            'in_time': in_time_str,
+            'out_time': out_time_str
+        }
+
+def get_today_attendance_summary():
+    """Get summary of today's attendance"""
+    global daily_attendance
+    
+    today = datetime.now().strftime('%Y-%m-%d')
+    
+    if today not in daily_attendance:
+        return {
+            'date': today,
+            'total_students': 0,
+            'present_students': 0,
+            'completed_students': 0,
+            'students': []
+        }
+    
+    students_data = []
+    present_count = 0
+    completed_count = 0
+    
+    for student_id, times in daily_attendance[today].items():
+        student_info = {
+            'student_id': student_id,
+            'in_time': times['in_time'].strftime('%H:%M:%S') if times['in_time'] else None,
+            'out_time': times['out_time'].strftime('%H:%M:%S') if times['out_time'] else None,
+            'status': 'absent'
+        }
+        
+        if times['in_time']:
+            present_count += 1
+            student_info['status'] = 'present'
+            
+            if times['out_time']:
+                completed_count += 1
+                student_info['status'] = 'completed'
+                
+                # Calculate total time
+                total_seconds = (times['out_time'] - times['in_time']).total_seconds()
+                total_minutes = int(total_seconds / 60)
+                hours = total_minutes // 60
+                minutes = total_minutes % 60
+                student_info['total_time'] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+        
+        students_data.append(student_info)
+    
+    return {
+        'date': today,
+        'total_students': len(students_data),
+        'present_students': present_count,
+        'completed_students': completed_count,
+        'students': students_data
+    }
+
 # ---------------- IMAGE PROCESSING ----------------
 def process_image_data(image_data, mode):
     """Process base64 image data from browser camera"""
@@ -418,7 +801,7 @@ def process_enrollment_frame(frame):
     faces = detect_faces(frame)
     result = {'faces': len(faces), 'samples': len(enrollment_data.get('embeddings', []))}
     
-    print(f"Enrollment processing: {len(faces)} faces detected, enrollment_data: {enrollment_data}")
+    print(f"Enrollment processing: {len(faces)} faces detected, current samples: {len(enrollment_data.get('embeddings', []))}")
     
     if faces:
         # Extract all face images
@@ -497,8 +880,41 @@ def process_attendance_frame(frame):
 
 def recognize_face(embedding, stored_embeddings, threshold=0.6):
     """
-    Recognize a single face embedding against stored embeddings
+    Recognize a single face embedding using FAISS vector search
     Returns list of recognized student IDs
+    """
+    global faiss_manager, last_daily_result
+    
+    try:
+        # Use FAISS for efficient similarity search
+        results, distances = faiss_manager.search(embedding, k=1, threshold=threshold)
+        
+        if results:
+            best_match = results[0]
+            best_dist = distances[0]
+            
+            print(f"FAISS recognition: {best_match} with distance {best_dist:.4f}")
+            
+            attendance_data.add(best_match)
+            # Mark attendance using enhanced daily system
+            daily_result = mark_daily_attendance(best_match)
+            last_daily_result = daily_result  # Store for user feedback
+            print(f"Daily attendance result for {best_match}: {daily_result['action']} - {daily_result['message']}")
+            
+            # Also mark in current session for compatibility
+            mark_student_attendance(best_match, 'in')
+            return [best_match]
+        
+        return []
+        
+    except Exception as e:
+        print(f"Error in FAISS recognition: {e}")
+        # Fallback to original method if FAISS fails
+        return recognize_face_fallback(embedding, stored_embeddings, threshold)
+
+def recognize_face_fallback(embedding, stored_embeddings, threshold=0.6):
+    """
+    Fallback recognition using numpy distance calculations
     """
     best_match, best_dist = "Unknown", float("inf")
     
@@ -512,8 +928,14 @@ def recognize_face(embedding, stored_embeddings, threshold=0.6):
             continue
     
     if best_dist < threshold and best_match != "Unknown":
+        global last_daily_result
         attendance_data.add(best_match)
-        # Mark attendance in current session
+        # Mark attendance using enhanced daily system
+        daily_result = mark_daily_attendance(best_match)
+        last_daily_result = daily_result  # Store for user feedback
+        print(f"Fallback recognition result for {best_match}: {daily_result['action']} - {daily_result['message']}")
+        
+        # Also mark in current session for compatibility
         mark_student_attendance(best_match, 'in')
         return [best_match]
     
@@ -529,8 +951,11 @@ def index():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # Always logout any existing user to ensure clean slate
     if current_user.is_authenticated:
-        return redirect(url_for('index'))
+        logout_user()
+        # Clear session data
+        session.clear()
     
     form = LoginForm()
     if form.validate_on_submit():
@@ -538,7 +963,10 @@ def login():
         if user and user.check_password(form.password.data):
             login_user(user)
             next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('index'))
+            if user.role == 'admin':
+                return redirect(url_for('admin_dashboard'))
+            else:
+                return redirect(next_page) if next_page else redirect(url_for('index'))
         flash('Invalid username or password', 'error')
     
     return render_template('login.html', form=form)
@@ -565,8 +993,11 @@ def register():
 @login_required
 def logout():
     logout_user()
+    session.clear()  # Clear all session data
     flash('You have been logged out', 'info')
-    return redirect(url_for('login'))
+    return redirect(url_for('attendance'))  # Redirect to public attendance page
+
+
 
 # ---------------- STUDENT ROUTES ----------------
 @app.route('/attendance')
@@ -653,28 +1084,33 @@ def process_frame():
     if current_mode is None:
         return jsonify({'status': 'error', 'message': 'Camera processing not available'})
     
-    if current_mode == 'enrollment':
-        result = process_enrollment_frame(image_data)
-        if result is None:
-            return jsonify({'status': 'error', 'message': 'Failed to process enrollment frame'})
-        return result
-    else:
-        # Process attendance frame  
-        try:
-            # Convert base64 to image
-            import base64
-            import io
-            from PIL import Image
-            import numpy as np
+    # Convert base64 to image for both enrollment and attendance
+    try:
+        import base64
+        import io
+        from PIL import Image
+        import numpy as np
+        
+        # Remove data:image/jpeg;base64, prefix if present
+        if ',' in image_data:
+            image_data = image_data.split(',')[1]
             
-            # Remove data:image/jpeg;base64, prefix if present
-            if ',' in image_data:
-                image_data = image_data.split(',')[1]
-                
-            image_bytes = base64.b64decode(image_data)
-            image = Image.open(io.BytesIO(image_bytes))
-            frame = np.array(image)
-            
+        image_bytes = base64.b64decode(image_data)
+        image = Image.open(io.BytesIO(image_bytes))
+        frame = np.array(image)
+        
+        if current_mode == 'enrollment':
+            result = process_enrollment_frame(frame)
+            if result is None:
+                return jsonify({'status': 'error', 'message': 'Failed to process enrollment frame'})
+            return jsonify({
+                'status': 'success',
+                'faces': result['faces'],
+                'samples': result['samples'],
+                'message': f"Processed frame: {result['faces']} faces detected, {result['samples']} samples collected"
+            })
+        else:
+            # Process attendance frame
             result = process_attendance_frame(frame)
             
             if result is None:
@@ -682,12 +1118,31 @@ def process_frame():
             
             # Format response for frontend
             if result['faces'] > 0 and result['recognized']:
+                global last_daily_result
                 person_name = result['recognized'][0]  # Take first recognized face
-                return jsonify({
+                
+                # Create enhanced response with daily attendance info
+                response = {
                     'status': 'success',
                     'person_name': person_name,
                     'message': f'Attendance marked for {person_name}'
-                })
+                }
+                
+                # Add daily attendance details if available
+                if last_daily_result and last_daily_result['student_id'] == person_name:
+                    response['daily_attendance'] = last_daily_result
+                    
+                    # Create more descriptive message based on action
+                    if last_daily_result['action'] == 'in':
+                        response['message'] = f'✅ {person_name} - Time IN marked at {last_daily_result["time"]}'
+                    elif last_daily_result['action'] == 'out':
+                        response['message'] = f'🚪 {person_name} - Time OUT marked at {last_daily_result["time"]} (Total: {last_daily_result.get("total_time", "N/A")})'
+                    elif last_daily_result['action'] == 'rejected':
+                        response['message'] = f'⏱️ {person_name} - {last_daily_result["message"]}'
+                    elif last_daily_result['action'] == 'completed':
+                        response['message'] = f'✨ {person_name} - Already completed attendance today'
+                
+                return jsonify(response)
             elif result['faces'] > 0:
                 return jsonify({
                     'status': 'success', 
@@ -700,9 +1155,9 @@ def process_frame():
                     'message': 'No face detected in frame'
                 })
                 
-        except Exception as e:
-            print(f"Error processing attendance frame: {e}")
-            return jsonify({'status': 'error', 'message': 'Error processing image'})
+    except Exception as e:
+        print(f"Error processing frame: {e}")
+        return jsonify({'status': 'error', 'message': 'Error processing image'})
 
 @app.route('/start_camera', methods=['POST'])
 def start_camera():
@@ -760,7 +1215,7 @@ def start_enrollment():
 @login_required
 @admin_required
 def complete_enrollment():
-    global enrollment_data, current_mode
+    global enrollment_data, current_mode, faiss_manager
     
     if 'student_id' not in enrollment_data or not enrollment_data.get('embeddings'):
         return jsonify({'status': 'error', 'message': 'No enrollment data found'})
@@ -768,23 +1223,21 @@ def complete_enrollment():
     student_id = enrollment_data['student_id']
     embeddings_list = enrollment_data['embeddings']
     
-    # Calculate mean embedding
+    # Calculate mean embedding for better representation
     mean_embedding = np.mean(embeddings_list, axis=0)
     
-    # Save to file
-    embeddings = load_embeddings()
-    embeddings[student_id] = mean_embedding
-    save_embeddings(embeddings)
+    # Add to FAISS index directly
+    faiss_manager.add_embedding(student_id, mean_embedding)
     
     # Clear enrollment data and mode
     enrollment_data = {}
     current_mode = None
     
-    print(f"Completed enrollment for {student_id} with {len(embeddings_list)} samples")
+    print(f"Completed FAISS enrollment for {student_id} with {len(embeddings_list)} samples")
     
     return jsonify({
         'status': 'success', 
-        'message': f'Enrolled {student_id} with {len(embeddings_list)} samples'
+        'message': f'Enrolled {student_id} with {len(embeddings_list)} samples (FAISS)'
     })
 
 @app.route('/get_attendance', methods=['GET'])
@@ -858,6 +1311,9 @@ def end_session():
 def get_current_session():
     global current_session
     
+    # Get today's attendance summary
+    daily_summary = get_today_attendance_summary()
+    
     if current_session and current_session['status'] == 'active':
         # Return format expected by attendance.html JavaScript
         return jsonify({
@@ -868,7 +1324,9 @@ def get_current_session():
             'total_present': len(current_session['attendees']),
             'last_updated': datetime.now().strftime('%H:%M:%S'),
             'start_time': current_session['start_time'].strftime('%Y-%m-%d %H:%M:%S'),
-            'status': current_session['status']
+            'status': current_session['status'],
+            # Enhanced time logging information
+            'daily_attendance': daily_summary
         })
     else:
         return jsonify({
@@ -876,7 +1334,9 @@ def get_current_session():
             'session_date': None,
             'session_name': None,
             'total_present': 0,
-            'last_updated': None
+            'last_updated': None,
+            # Enhanced time logging information
+            'daily_attendance': daily_summary
         })
 
 @app.route('/mark_out', methods=['POST'])
