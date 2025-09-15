@@ -207,6 +207,12 @@
             </div>
 
             <div class="card">
+                <h3>Student Management</h3>
+                <p>View, add, edit, and manage student profiles and enrollment data.</p>
+                <a href="{{ url_for('students_management') }}" class="btn">Manage Students</a>
+            </div>
+
+            <div class="card">
                 <h3>Attendance Records</h3>
                 <p>View, manage, and export attendance records. Generate reports and analytics.</p>
                 <a href="{{ url_for('view_attendance') }}" class="btn">View Attendance</a>
@@ -320,6 +326,69 @@
             .catch(error => {
                 console.error('Error:', error);
                 alert('Failed to get session info');
+            });
+        }
+
+        function showStudentManager() {
+            // Fetch list of students
+            fetch('/list_students')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    if (data.students.length === 0) {
+                        alert('No students are currently registered.');
+                        return;
+                    }
+
+                    let studentList = 'Registered Students:\n\n';
+                    data.students.forEach((student, index) => {
+                        studentList += `${index + 1}. ${student}\n`;
+                    });
+                    
+                    studentList += '\nEnter the student ID to delete (or cancel to close):';
+                    
+                    const studentToDelete = prompt(studentList);
+                    
+                    if (studentToDelete && studentToDelete.trim()) {
+                        if (data.students.includes(studentToDelete.trim())) {
+                            if (confirm(`Are you sure you want to delete student "${studentToDelete.trim()}"? This action cannot be undone.`)) {
+                                deleteStudent(studentToDelete.trim());
+                            }
+                        } else {
+                            alert('Student ID not found in the list.');
+                        }
+                    }
+                } else {
+                    alert('Error loading students: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to load student list');
+            });
+        }
+
+        function deleteStudent(studentId) {
+            fetch('/delete_student', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    student_id: studentId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    alert(`Student "${studentId}" has been deleted successfully.`);
+                } else {
+                    alert('Error deleting student: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to delete student');
             });
         }
     </script>

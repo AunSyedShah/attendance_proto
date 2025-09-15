@@ -121,6 +121,111 @@ DAILY_ATTENDANCE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'daily_a
 FAISS_INDEX_FILE = os.path.join(os.path.dirname(__file__), 'data', 'embeddings.faiss')
 FAISS_METADATA_FILE = os.path.join(os.path.dirname(__file__), 'data', 'embeddings_metadata.pkl')
 
+# Student profiles file path
+STUDENT_PROFILES_FILE = os.path.join(os.path.dirname(__file__), 'data', 'student_profiles.json')
+
+# ---------------- STUDENT PROFILE MANAGER ----------------
+class StudentProfileManager:
+    def __init__(self):
+        self.profiles = {}
+        self.load_profiles()
+    
+    def load_profiles(self):
+        """Load student profiles from disk"""
+        try:
+            if os.path.exists(STUDENT_PROFILES_FILE):
+                with open(STUDENT_PROFILES_FILE, 'r') as f:
+                    self.profiles = json.load(f)
+                print(f"Loaded {len(self.profiles)} student profiles")
+            else:
+                self.profiles = {}
+                print("No existing student profiles found")
+        except Exception as e:
+            print(f"Error loading student profiles: {e}")
+            self.profiles = {}
+    
+    def save_profiles(self):
+        """Save student profiles to disk"""
+        try:
+            os.makedirs(os.path.dirname(STUDENT_PROFILES_FILE), exist_ok=True)
+            with open(STUDENT_PROFILES_FILE, 'w') as f:
+                json.dump(self.profiles, f, indent=2, default=str)
+            print(f"Saved {len(self.profiles)} student profiles")
+        except Exception as e:
+            print(f"Error saving student profiles: {e}")
+    
+    def add_profile(self, student_id, name, email=None, phone=None, department=None, year=None, notes=None):
+        """Add or update student profile"""
+        from datetime import datetime
+        
+        profile = {
+            'student_id': student_id,
+            'name': name,
+            'email': email or '',
+            'phone': phone or '',
+            'department': department or '',
+            'year': year or '',
+            'notes': notes or '',
+            'created_at': datetime.now().isoformat(),
+            'updated_at': datetime.now().isoformat(),
+            'enrollment_status': 'active'
+        }
+        
+        if student_id in self.profiles:
+            # Update existing profile, preserve creation date
+            profile['created_at'] = self.profiles[student_id].get('created_at', profile['created_at'])
+        
+        self.profiles[student_id] = profile
+        self.save_profiles()
+        return profile
+    
+    def get_profile(self, student_id):
+        """Get student profile by ID"""
+        return self.profiles.get(student_id)
+    
+    def get_all_profiles(self):
+        """Get all student profiles"""
+        return list(self.profiles.values())
+    
+    def update_profile(self, student_id, **kwargs):
+        """Update specific fields of a student profile"""
+        if student_id not in self.profiles:
+            return None
+        
+        from datetime import datetime
+        
+        # Update allowed fields
+        allowed_fields = ['name', 'email', 'phone', 'department', 'year', 'notes', 'enrollment_status']
+        for field, value in kwargs.items():
+            if field in allowed_fields:
+                self.profiles[student_id][field] = value
+        
+        self.profiles[student_id]['updated_at'] = datetime.now().isoformat()
+        self.save_profiles()
+        return self.profiles[student_id]
+    
+    def delete_profile(self, student_id):
+        """Delete student profile"""
+        if student_id in self.profiles:
+            deleted_profile = self.profiles.pop(student_id)
+            self.save_profiles()
+            return deleted_profile
+        return None
+    
+    def search_profiles(self, query):
+        """Search profiles by name, ID, email, or department"""
+        query = query.lower()
+        results = []
+        
+        for profile in self.profiles.values():
+            if (query in profile.get('student_id', '').lower() or
+                query in profile.get('name', '').lower() or
+                query in profile.get('email', '').lower() or
+                query in profile.get('department', '').lower()):
+                results.append(profile)
+        
+        return results
+
 # ---------------- FAISS EMBEDDING MANAGER ----------------
 class FAISSEmbeddingManager:
     def __init__(self, embedding_dim=2048):
@@ -250,6 +355,31 @@ class FAISSEmbeddingManager:
             print(f"Error searching embeddings: {e}")
             return [], []
     
+    def check_face_exists(self, embedding, similarity_threshold=0.3):
+        """Check if a face already exists in the database with high similarity"""
+        try:
+            if self.index.ntotal == 0:
+                return False, None
+            
+            # Search for similar faces with a stricter threshold for duplicate detection
+            student_ids, distances = self.search(embedding, k=1, threshold=similarity_threshold)
+            
+            if student_ids and distances:
+                # If we found a very similar face, it's likely a duplicate
+                return True, student_ids[0]
+            
+            return False, None
+            
+        except Exception as e:
+            print(f"Error checking face existence: {e}")
+            return False, None
+    
+    def student_exists(self, student_id):
+        """Check if a student ID already exists in the database"""
+        return student_id in self.student_ids
+
+# Initialize FAISS manager
+    
     def get_all_embeddings(self):
         """Get all embeddings as a dictionary (for compatibility)"""
         try:
@@ -285,8 +415,9 @@ class FAISSEmbeddingManager:
             print(f"Error migrating from pickle: {e}")
         return False
 
-# Initialize FAISS manager
+# Initialize FAISS manager and profile manager
 faiss_manager = FAISSEmbeddingManager()
+profile_manager = StudentProfileManager()
 
 # ---------------- MODEL LOADING ----------------
 def load_model(model_name="ResNet50"):
@@ -796,7 +927,7 @@ def process_image_data(image_data, mode):
         return None
 
 def process_enrollment_frame(frame):
-    global enrollment_data
+    global enrollment_data, faiss_manager
     
     faces = detect_faces(frame)
     result = {'faces': len(faces), 'samples': len(enrollment_data.get('embeddings', []))}
@@ -820,6 +951,16 @@ def process_enrollment_frame(frame):
                 embedding = get_embedding(face_images[0])
                 print(f"Generated embedding: {embedding is not None}")
                 if embedding is not None:
+                    # Check if this face already exists in database
+                    face_exists, existing_student = faiss_manager.check_face_exists(embedding, similarity_threshold=0.3)
+                    
+                    if face_exists and existing_student:
+                        current_student = enrollment_data.get('student_id')
+                        if existing_student != current_student:
+                            result['error'] = f'This face is already registered for student "{existing_student}". Cannot register the same face for "{current_student}".'
+                            result['duplicate_detected'] = True
+                            return result
+                    
                     student_id = enrollment_data.get('student_id')
                     if student_id:
                         if 'embeddings' not in enrollment_data:
@@ -835,9 +976,17 @@ def process_enrollment_frame(frame):
                     if 'embeddings' not in enrollment_data:
                         enrollment_data['embeddings'] = []
                     
-                    # Add valid embeddings
+                    # Add valid embeddings after checking for duplicates
                     for embedding in embeddings:
                         if embedding is not None:
+                            # Check if this face already exists in database
+                            face_exists, existing_student = faiss_manager.check_face_exists(embedding, similarity_threshold=0.3)
+                            
+                            if face_exists and existing_student and existing_student != student_id:
+                                result['error'] = f'One of the detected faces is already registered for student "{existing_student}". Cannot register the same face for "{student_id}".'
+                                result['duplicate_detected'] = True
+                                return result
+                            
                             enrollment_data['embeddings'].append(embedding)
                     
                     result['samples'] = len(enrollment_data['embeddings'])
@@ -1103,6 +1252,16 @@ def process_frame():
             result = process_enrollment_frame(frame)
             if result is None:
                 return jsonify({'status': 'error', 'message': 'Failed to process enrollment frame'})
+            
+            # Check for duplicate face detection error
+            if result.get('duplicate_detected'):
+                return jsonify({
+                    'status': 'error',
+                    'faces': result['faces'],
+                    'samples': result['samples'],
+                    'message': result.get('error', 'Duplicate face detected')
+                })
+            
             return jsonify({
                 'status': 'success',
                 'faces': result['faces'],
@@ -1196,13 +1355,20 @@ def stop_camera():
 @login_required
 @admin_required
 def start_enrollment():
-    global enrollment_data, current_mode
+    global enrollment_data, current_mode, faiss_manager
     
     data = request.json or {}
     student_id = data.get('student_id', '').strip()
     
     if not student_id:
         return jsonify({'status': 'error', 'message': 'Student ID is required'})
+    
+    # Check if student ID already exists
+    if faiss_manager.student_exists(student_id):
+        return jsonify({
+            'status': 'error', 
+            'message': f'Student ID "{student_id}" is already registered. Please use a different ID or delete the existing student first.'
+        })
     
     enrollment_data = {'student_id': student_id, 'embeddings': []}
     current_mode = 'enrollment'  # Set current mode for frame processing
@@ -1215,7 +1381,7 @@ def start_enrollment():
 @login_required
 @admin_required
 def complete_enrollment():
-    global enrollment_data, current_mode, faiss_manager
+    global enrollment_data, current_mode, faiss_manager, profile_manager
     
     if 'student_id' not in enrollment_data or not enrollment_data.get('embeddings'):
         return jsonify({'status': 'error', 'message': 'No enrollment data found'})
@@ -1223,11 +1389,26 @@ def complete_enrollment():
     student_id = enrollment_data['student_id']
     embeddings_list = enrollment_data['embeddings']
     
+    # Final check: ensure student ID doesn't exist (in case of race condition)
+    if faiss_manager.student_exists(student_id):
+        return jsonify({
+            'status': 'error', 
+            'message': f'Student ID "{student_id}" already exists. Please delete the existing student first.'
+        })
+    
     # Calculate mean embedding for better representation
     mean_embedding = np.mean(embeddings_list, axis=0)
     
     # Add to FAISS index directly
     faiss_manager.add_embedding(student_id, mean_embedding)
+    
+    # Create basic profile if it doesn't exist
+    if not profile_manager.get_profile(student_id):
+        profile_manager.add_profile(
+            student_id=student_id,
+            name=f"Student {student_id}",  # Default name
+            notes="Face data enrolled - please update profile information"
+        )
     
     # Clear enrollment data and mode
     enrollment_data = {}
@@ -1237,8 +1418,326 @@ def complete_enrollment():
     
     return jsonify({
         'status': 'success', 
-        'message': f'Enrolled {student_id} with {len(embeddings_list)} samples (FAISS)'
+        'message': f'Enrolled {student_id} with {len(embeddings_list)} samples. Please update student profile information.',
+        'redirect_to_profile': True
     })
+
+@app.route('/delete_student', methods=['POST'])
+@login_required
+@admin_required
+def delete_student():
+    global faiss_manager
+    
+    data = request.json or {}
+    student_id = data.get('student_id', '').strip()
+    
+    if not student_id:
+        return jsonify({'status': 'error', 'message': 'Student ID is required'})
+    
+    if not faiss_manager.student_exists(student_id):
+        return jsonify({'status': 'error', 'message': f'Student "{student_id}" not found'})
+    
+    try:
+        faiss_manager.remove_embedding(student_id)
+        return jsonify({
+            'status': 'success', 
+            'message': f'Student "{student_id}" deleted successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error', 
+            'message': f'Failed to delete student "{student_id}": {str(e)}'
+        })
+
+@app.route('/list_students', methods=['GET'])
+@login_required
+@admin_required
+def list_students():
+    global faiss_manager, profile_manager
+    
+    try:
+        students = faiss_manager.student_ids.copy()  # Create a copy to avoid modification issues
+        return jsonify({
+            'status': 'success',
+            'students': students,
+            'count': len(students)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to list students: {str(e)}'
+        })
+
+# ---------------- STUDENT MANAGEMENT ROUTES ----------------
+
+@app.route('/students')
+@login_required
+@admin_required
+def students_management():
+    """Student management page"""
+    return render_template('students.html')
+
+@app.route('/api/students', methods=['GET'])
+@login_required
+@admin_required
+def api_get_students():
+    """Get all students with their profiles and enrollment status"""
+    global faiss_manager, profile_manager
+    
+    try:
+        # Get all profiles
+        profiles = profile_manager.get_all_profiles()
+        
+        # Get enrolled student IDs
+        enrolled_ids = set(faiss_manager.student_ids)
+        
+        # Combine profile data with enrollment status
+        students = []
+        for profile in profiles:
+            student = profile.copy()
+            student['has_face_data'] = profile['student_id'] in enrolled_ids
+            students.append(student)
+        
+        # Add students who have face data but no profile
+        for student_id in enrolled_ids:
+            if not profile_manager.get_profile(student_id):
+                students.append({
+                    'student_id': student_id,
+                    'name': 'Unknown',
+                    'email': '',
+                    'phone': '',
+                    'department': '',
+                    'year': '',
+                    'notes': 'Face data only - no profile',
+                    'created_at': '',
+                    'updated_at': '',
+                    'enrollment_status': 'active',
+                    'has_face_data': True
+                })
+        
+        return jsonify({
+            'status': 'success',
+            'students': students,
+            'count': len(students)
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to get students: {str(e)}'
+        })
+
+@app.route('/api/students/<student_id>', methods=['GET'])
+@login_required
+@admin_required
+def api_get_student(student_id):
+    """Get specific student details"""
+    global faiss_manager, profile_manager
+    
+    try:
+        profile = profile_manager.get_profile(student_id)
+        has_face_data = student_id in faiss_manager.student_ids
+        
+        if not profile and not has_face_data:
+            return jsonify({
+                'status': 'error',
+                'message': 'Student not found'
+            }), 404
+        
+        if not profile:
+            # Student has face data but no profile
+            profile = {
+                'student_id': student_id,
+                'name': 'Unknown',
+                'email': '',
+                'phone': '',
+                'department': '',
+                'year': '',
+                'notes': 'Face data only - no profile',
+                'created_at': '',
+                'updated_at': '',
+                'enrollment_status': 'active'
+            }
+        
+        profile['has_face_data'] = has_face_data
+        
+        return jsonify({
+            'status': 'success',
+            'student': profile
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to get student: {str(e)}'
+        })
+
+@app.route('/api/students', methods=['POST'])
+@login_required
+@admin_required
+def api_create_student():
+    """Create a new student profile"""
+    global profile_manager, faiss_manager
+    
+    try:
+        data = request.json or {}
+        
+        # Validate required fields
+        student_id = data.get('student_id', '').strip()
+        name = data.get('name', '').strip()
+        
+        if not student_id or not name:
+            return jsonify({
+                'status': 'error',
+                'message': 'Student ID and name are required'
+            }), 400
+        
+        # Check if student already exists
+        if profile_manager.get_profile(student_id):
+            return jsonify({
+                'status': 'error',
+                'message': f'Student profile for "{student_id}" already exists'
+            }), 400
+        
+        # Create profile
+        profile = profile_manager.add_profile(
+            student_id=student_id,
+            name=name,
+            email=data.get('email', ''),
+            phone=data.get('phone', ''),
+            department=data.get('department', ''),
+            year=data.get('year', ''),
+            notes=data.get('notes', '')
+        )
+        
+        profile['has_face_data'] = student_id in faiss_manager.student_ids
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Student profile created for {student_id}',
+            'student': profile
+        }), 201
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to create student: {str(e)}'
+        }), 500
+
+@app.route('/api/students/<student_id>', methods=['PUT'])
+@login_required
+@admin_required
+def api_update_student(student_id):
+    """Update student profile"""
+    global profile_manager, faiss_manager
+    
+    try:
+        data = request.json or {}
+        
+        # Update profile
+        updated_profile = profile_manager.update_profile(
+            student_id=student_id,
+            name=data.get('name'),
+            email=data.get('email'),
+            phone=data.get('phone'),
+            department=data.get('department'),
+            year=data.get('year'),
+            notes=data.get('notes'),
+            enrollment_status=data.get('enrollment_status')
+        )
+        
+        if not updated_profile:
+            return jsonify({
+                'status': 'error',
+                'message': 'Student not found'
+            }), 404
+        
+        updated_profile['has_face_data'] = student_id in faiss_manager.student_ids
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Student {student_id} updated successfully',
+            'student': updated_profile
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to update student: {str(e)}'
+        }), 500
+
+@app.route('/api/students/<student_id>', methods=['DELETE'])
+@login_required
+@admin_required
+def api_delete_student(student_id):
+    """Delete student profile and optionally face data"""
+    global profile_manager, faiss_manager
+    
+    try:
+        data = request.json or {}
+        delete_face_data = data.get('delete_face_data', False)
+        
+        # Delete profile
+        deleted_profile = profile_manager.delete_profile(student_id)
+        
+        # Delete face data if requested
+        face_data_deleted = False
+        if delete_face_data and student_id in faiss_manager.student_ids:
+            faiss_manager.remove_embedding(student_id)
+            face_data_deleted = True
+        
+        if not deleted_profile and not face_data_deleted:
+            return jsonify({
+                'status': 'error',
+                'message': 'Student not found'
+            }), 404
+        
+        message_parts = []
+        if deleted_profile:
+            message_parts.append('profile')
+        if face_data_deleted:
+            message_parts.append('face data')
+        
+        return jsonify({
+            'status': 'success',
+            'message': f'Student {student_id} {" and ".join(message_parts)} deleted successfully'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to delete student: {str(e)}'
+        }), 500
+
+@app.route('/api/students/search', methods=['GET'])
+@login_required
+@admin_required
+def api_search_students():
+    """Search students by query"""
+    global profile_manager, faiss_manager
+    
+    try:
+        query = request.args.get('q', '').strip()
+        
+        if not query:
+            return jsonify({
+                'status': 'error',
+                'message': 'Search query is required'
+            }), 400
+        
+        # Search profiles
+        results = profile_manager.search_profiles(query)
+        
+        # Add enrollment status
+        for student in results:
+            student['has_face_data'] = student['student_id'] in faiss_manager.student_ids
+        
+        return jsonify({
+            'status': 'success',
+            'students': results,
+            'count': len(results),
+            'query': query
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Search failed: {str(e)}'
+        }), 500
 
 @app.route('/get_attendance', methods=['GET'])
 def get_attendance():

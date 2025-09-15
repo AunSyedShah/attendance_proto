@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Management - AI Attendance System</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .navbar h1 {
+            font-size: 1.5rem;
+        }
+
+        .navbar a {
+            color: white;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+
+        .navbar a:hover {
+            background-color: rgba(255,255,255,0.2);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .search-bar {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            flex: 1;
+            max-width: 500px;
+        }
+
+        .search-bar input {
+            flex: 1;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            text-decoration: none;
+            display: inline-block;
+            text-align: center;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #dc3545 0%, #fd7e14 100%);
+        }
+
+        .btn-small {
+            padding: 0.5rem 1rem;
+            font-size: 0.8rem;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 3px 15px rgba(0,0,0,0.1);
+        }
+
+        .stat-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+
+        .students-table-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 3px 15px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .table-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 1rem;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+
+        tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+
+        .status-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .status-active {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status-inactive {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .face-data-badge {
+            padding: 0.25rem 0.5rem;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+
+        .face-data-yes {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .face-data-no {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+
+        .actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .modal-content {
+            background-color: white;
+            margin: 2% auto;
+            padding: 2rem;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid #eee;
+        }
+
+        .close {
+            font-size: 2rem;
+            font-weight: bold;
+            cursor: pointer;
+            color: #aaa;
+        }
+
+        .close:hover {
+            color: #000;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1rem;
+        }
+
+        .form-group textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 2rem;
+            color: #666;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: #666;
+        }
+
+        .empty-state img {
+            width: 100px;
+            opacity: 0.5;
+            margin-bottom: 1rem;
+        }
+
+        @media (max-width: 768px) {
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .search-bar {
+                max-width: none;
+            }
+
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+
+            table {
+                font-size: 0.9rem;
+            }
+
+            th, td {
+                padding: 0.5rem;
+            }
+        }
+
+        .message {
+            padding: 1rem;
+            margin: 1rem 0;
+            border-radius: 5px;
+            display: none;
+        }
+
+        .message.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        .message.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        .message.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h1>Student Management</h1>
+        <div>
+            <a href="{{ url_for('admin_dashboard') }}">Dashboard</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+        </div>
+    </nav>
+
+    <div class="container">
+        <div id="messageContainer"></div>
+
+        <!-- Statistics -->
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-number" id="totalStudents">0</div>
+                <div class="stat-label">Total Students</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="enrolledStudents">0</div>
+                <div class="stat-label">With Face Data</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="activeStudents">0</div>
+                <div class="stat-label">Active Status</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="profilesOnly">0</div>
+                <div class="stat-label">Profile Only</div>
+            </div>
+        </div>
+
+        <!-- Header with search and actions -->
+        <div class="header">
+            <div class="search-bar">
+                <input type="text" id="searchInput" placeholder="Search students by ID, name, email, or department...">
+                <button class="btn" onclick="searchStudents()">Search</button>
+                <button class="btn btn-secondary" onclick="loadStudents()">Clear</button>
+            </div>
+            <button class="btn btn-secondary" onclick="openCreateModal()">Add Student</button>
+        </div>
+
+        <!-- Students Table -->
+        <div class="students-table-container">
+            <div class="table-header">
+                <h3>Students</h3>
+                <button class="btn btn-small" onclick="loadStudents()">Refresh</button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <p>Loading students...</p>
+            </div>
+
+            <div class="empty-state" id="emptyState" style="display: none;">
+                <p>No students found</p>
+                <button class="btn" onclick="openCreateModal()">Add First Student</button>
+            </div>
+
+            <table id="studentsTable" style="display: none;">
+                <thead>
+                    <tr>
+                        <th>Student ID</th>
+                        <th>Name</th>
+                        <th>Department</th>
+                        <th>Year</th>
+                        <th>Status</th>
+                        <th>Face Data</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="studentsTableBody">
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Student Modal -->
+    <div id="studentModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="modalTitle">Add Student</h2>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            
+            <form id="studentForm">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="studentId">Student ID *</label>
+                        <input type="text" id="studentId" name="student_id" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="studentName">Full Name *</label>
+                        <input type="text" id="studentName" name="name" required>
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="studentEmail">Email</label>
+                        <input type="email" id="studentEmail" name="email">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentPhone">Phone</label>
+                        <input type="tel" id="studentPhone" name="phone">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="studentDepartment">Department</label>
+                        <input type="text" id="studentDepartment" name="department">
+                    </div>
+                    <div class="form-group">
+                        <label for="studentYear">Year</label>
+                        <select id="studentYear" name="year">
+                            <option value="">Select Year</option>
+                            <option value="1">Year 1</option>
+                            <option value="2">Year 2</option>
+                            <option value="3">Year 3</option>
+                            <option value="4">Year 4</option>
+                            <option value="Graduate">Graduate</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="studentStatus">Status</label>
+                    <select id="studentStatus" name="enrollment_status">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="studentNotes">Notes</label>
+                    <textarea id="studentNotes" name="notes" placeholder="Additional notes about the student..."></textarea>
+                </div>
+
+                <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                    <button type="button" class="btn" onclick="closeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-secondary" id="submitBtn">Save Student</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- View Student Modal -->
+    <div id="viewModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Student Details</h2>
+                <span class="close" onclick="closeViewModal()">&times;</span>
+            </div>
+            
+            <div id="studentDetails">
+                <!-- Student details will be populated here -->
+            </div>
+
+            <div style="display: flex; gap: 1rem; justify-content: flex-end; margin-top: 2rem;">
+                <button type="button" class="btn" onclick="closeViewModal()">Close</button>
+                <button type="button" class="btn btn-secondary" onclick="editFromView()">Edit</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let students = [];
+        let currentEditingId = null;
+
+        // Load students on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadStudents();
+        });
+
+        // Search on Enter key
+        document.getElementById('searchInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                searchStudents();
+            }
+        });
+
+        function showMessage(message, type = 'info') {
+            const container = document.getElementById('messageContainer');
+            container.innerHTML = `<div class="message ${type}" style="display: block;">${message}</div>`;
+            
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                container.innerHTML = '';
+            }, 5000);
+        }
+
+        function showLoading() {
+            document.getElementById('loading').style.display = 'block';
+            document.getElementById('studentsTable').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'none';
+        }
+
+        function hideLoading() {
+            document.getElementById('loading').style.display = 'none';
+        }
+
+        function updateStats() {
+            const total = students.length;
+            const enrolled = students.filter(s => s.has_face_data).length;
+            const active = students.filter(s => s.enrollment_status === 'active').length;
+            const profilesOnly = students.filter(s => !s.has_face_data).length;
+
+            document.getElementById('totalStudents').textContent = total;
+            document.getElementById('enrolledStudents').textContent = enrolled;
+            document.getElementById('activeStudents').textContent = active;
+            document.getElementById('profilesOnly').textContent = profilesOnly;
+        }
+
+        function loadStudents() {
+            showLoading();
+            
+            fetch('/api/students')
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.status === 'success') {
+                    students = data.students;
+                    displayStudents(students);
+                    updateStats();
+                } else {
+                    showMessage('Failed to load students: ' + data.message, 'error');
+                    showEmptyState();
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Error:', error);
+                showMessage('Failed to load students', 'error');
+                showEmptyState();
+            });
+        }
+
+        function displayStudents(studentsToShow) {
+            const tbody = document.getElementById('studentsTableBody');
+            const table = document.getElementById('studentsTable');
+            const emptyState = document.getElementById('emptyState');
+
+            if (studentsToShow.length === 0) {
+                showEmptyState();
+                return;
+            }
+
+            table.style.display = 'table';
+            emptyState.style.display = 'none';
+
+            tbody.innerHTML = studentsToShow.map(student => `
+                <tr>
+                    <td>${student.student_id}</td>
+                    <td>${student.name}</td>
+                    <td>${student.department || '-'}</td>
+                    <td>${student.year || '-'}</td>
+                    <td>
+                        <span class="status-badge ${student.enrollment_status === 'active' ? 'status-active' : 'status-inactive'}">
+                            ${student.enrollment_status || 'active'}
+                        </span>
+                    </td>
+                    <td>
+                        <span class="face-data-badge ${student.has_face_data ? 'face-data-yes' : 'face-data-no'}">
+                            ${student.has_face_data ? 'Yes' : 'No'}
+                        </span>
+                    </td>
+                    <td class="actions">
+                        <button class="btn btn-small" onclick="viewStudent('${student.student_id}')">View</button>
+                        <button class="btn btn-small" onclick="editStudent('${student.student_id}')">Edit</button>
+                        <button class="btn btn-small btn-danger" onclick="confirmDelete('${student.student_id}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function showEmptyState() {
+            document.getElementById('studentsTable').style.display = 'none';
+            document.getElementById('emptyState').style.display = 'block';
+        }
+
+        function searchStudents() {
+            const query = document.getElementById('searchInput').value.trim();
+            
+            if (!query) {
+                displayStudents(students);
+                return;
+            }
+
+            showLoading();
+
+            fetch(`/api/students/search?q=${encodeURIComponent(query)}`)
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.status === 'success') {
+                    displayStudents(data.students);
+                    showMessage(`Found ${data.students.length} student(s) matching "${query}"`, 'info');
+                } else {
+                    showMessage('Search failed: ' + data.message, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Error:', error);
+                showMessage('Search failed', 'error');
+            });
+        }
+
+        function openCreateModal() {
+            currentEditingId = null;
+            document.getElementById('modalTitle').textContent = 'Add Student';
+            document.getElementById('submitBtn').textContent = 'Save Student';
+            document.getElementById('studentForm').reset();
+            document.getElementById('studentId').disabled = false;
+            document.getElementById('studentModal').style.display = 'block';
+        }
+
+        function editStudent(studentId) {
+            const student = students.find(s => s.student_id === studentId);
+            if (!student) return;
+
+            currentEditingId = studentId;
+            document.getElementById('modalTitle').textContent = 'Edit Student';
+            document.getElementById('submitBtn').textContent = 'Update Student';
+            
+            // Populate form
+            document.getElementById('studentId').value = student.student_id;
+            document.getElementById('studentId').disabled = true;
+            document.getElementById('studentName').value = student.name;
+            document.getElementById('studentEmail').value = student.email || '';
+            document.getElementById('studentPhone').value = student.phone || '';
+            document.getElementById('studentDepartment').value = student.department || '';
+            document.getElementById('studentYear').value = student.year || '';
+            document.getElementById('studentStatus').value = student.enrollment_status || 'active';
+            document.getElementById('studentNotes').value = student.notes || '';
+            
+            document.getElementById('studentModal').style.display = 'block';
+        }
+
+        function viewStudent(studentId) {
+            const student = students.find(s => s.student_id === studentId);
+            if (!student) return;
+
+            const detailsHtml = `
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div><strong>Student ID:</strong> ${student.student_id}</div>
+                    <div><strong>Name:</strong> ${student.name}</div>
+                    <div><strong>Email:</strong> ${student.email || 'Not provided'}</div>
+                    <div><strong>Phone:</strong> ${student.phone || 'Not provided'}</div>
+                    <div><strong>Department:</strong> ${student.department || 'Not specified'}</div>
+                    <div><strong>Year:</strong> ${student.year || 'Not specified'}</div>
+                    <div><strong>Status:</strong> 
+                        <span class="status-badge ${student.enrollment_status === 'active' ? 'status-active' : 'status-inactive'}">
+                            ${student.enrollment_status || 'active'}
+                        </span>
+                    </div>
+                    <div><strong>Face Data:</strong> 
+                        <span class="face-data-badge ${student.has_face_data ? 'face-data-yes' : 'face-data-no'}">
+                            ${student.has_face_data ? 'Enrolled' : 'Not enrolled'}
+                        </span>
+                    </div>
+                </div>
+                ${student.notes ? `<div style="margin-top: 1rem;"><strong>Notes:</strong><br>${student.notes}</div>` : ''}
+                <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #eee; font-size: 0.9rem; color: #666;">
+                    <div><strong>Created:</strong> ${student.created_at ? new Date(student.created_at).toLocaleString() : 'Unknown'}</div>
+                    <div><strong>Updated:</strong> ${student.updated_at ? new Date(student.updated_at).toLocaleString() : 'Unknown'}</div>
+                </div>
+            `;
+
+            document.getElementById('studentDetails').innerHTML = detailsHtml;
+            document.getElementById('viewModal').style.display = 'block';
+            currentEditingId = studentId;
+        }
+
+        function editFromView() {
+            closeViewModal();
+            editStudent(currentEditingId);
+        }
+
+        function closeModal() {
+            document.getElementById('studentModal').style.display = 'none';
+            currentEditingId = null;
+        }
+
+        function closeViewModal() {
+            document.getElementById('viewModal').style.display = 'none';
+            currentEditingId = null;
+        }
+
+        function confirmDelete(studentId) {
+            const student = students.find(s => s.student_id === studentId);
+            if (!student) return;
+
+            let message = `Are you sure you want to delete student "${student.student_id}" (${student.name})?`;
+            
+            if (student.has_face_data) {
+                message += '\n\nThis student has face data enrolled. Do you want to delete the face data as well?';
+                
+                if (confirm(message)) {
+                    const deleteFaceData = confirm('Delete face data too?\n\nClick OK to delete both profile and face data.\nClick Cancel to delete profile only.');
+                    deleteStudent(studentId, deleteFaceData);
+                }
+            } else {
+                if (confirm(message)) {
+                    deleteStudent(studentId, false);
+                }
+            }
+        }
+
+        function deleteStudent(studentId, deleteFaceData = false) {
+            fetch(`/api/students/${studentId}`, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    delete_face_data: deleteFaceData
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    showMessage(data.message, 'success');
+                    loadStudents();
+                } else {
+                    showMessage('Failed to delete student: ' + data.message, 'error');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showMessage('Failed to delete student', 'error');
+            });
+        }
+
+        // Form submission
+        document.getElementById('studentForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const studentData = Object.fromEntries(formData.entries());
+            
+            const url = currentEditingId ? `/api/students/${currentEditingId}` : '/api/students';
+            const method = currentEditingId ? 'PUT' : 'POST';
+            
+            document.getElementById('submitBtn').disabled = true;
+            document.getElementById('submitBtn').textContent = 'Saving...';
+            
+            fetch(url, {
+                method: method,
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(studentData)
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').textContent = currentEditingId ? 'Update Student' : 'Save Student';
+                
+                if (data.status === 'success') {
+                    showMessage(data.message, 'success');
+                    closeModal();
+                    loadStudents();
+                } else {
+                    showMessage('Failed to save student: ' + data.message, 'error');
+                }
+            })
+            .catch(error => {
+                document.getElementById('submitBtn').disabled = false;
+                document.getElementById('submitBtn').textContent = currentEditingId ? 'Update Student' : 'Save Student';
+                console.error('Error:', error);
+                showMessage('Failed to save student', 'error');
+            });
+        });
+
+        // Close modal when clicking outside
+        window.addEventListener('click', function(event) {
+            const studentModal = document.getElementById('studentModal');
+            const viewModal = document.getElementById('viewModal');
+            
+            if (event.target === studentModal) {
+                closeModal();
+            }
+            if (event.target === viewModal) {
+                closeViewModal();
+            }
+        });
+    </script>
+</body>
+</html>
