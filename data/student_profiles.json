@@ -1,0 +1,14 @@
+{
+  "sam": {
+    "student_id": "sam",
+    "name": "Student sam",
+    "email": "",
+    "phone": "",
+    "department": "",
+    "year": "",
+    "notes": "Face data enrolled - please update profile information",
+    "created_at": "2025-09-15T10:51:32.302551",
+    "updated_at": "2025-09-15T10:51:32.302813",
+    "enrollment_status": "active"
+  }
+}

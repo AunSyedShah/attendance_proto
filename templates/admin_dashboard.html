@@ -174,19 +174,19 @@
         <!-- Stats Section -->
         <div class="stats">
             <div class="stat-card">
-                <div class="stat-number">0</div>
+                <div class="stat-number" id="activeSessions">0</div>
                 <div class="stat-label">Active Sessions</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">0</div>
+                <div class="stat-number" id="enrolledStudents">0</div>
                 <div class="stat-label">Enrolled Students</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">0</div>
+                <div class="stat-number" id="todaysAttendance">0</div>
                 <div class="stat-label">Today's Attendance</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">95%</div>
+                <div class="stat-number" id="avgAttendance">0%</div>
                 <div class="stat-label">Average Attendance</div>
             </div>
         </div>
@@ -249,7 +249,7 @@
             .then(data => {
                 if (data.status === 'success') {
                     alert('Session started successfully!');
-                    location.reload();
+                    loadDashboardStats(); // Refresh stats after starting session
                 } else {
                     alert('Error: ' + data.message);
                 }
@@ -272,7 +272,7 @@
                 .then(data => {
                     if (data.status === 'success') {
                         alert('Session ended successfully!');
-                        location.reload();
+                        loadDashboardStats(); // Refresh stats after ending session
                     } else {
                         alert('Error: ' + data.message);
                     }
@@ -296,7 +296,7 @@
                 .then(data => {
                     if (data.status === 'success') {
                         alert('All data cleared successfully!');
-                        location.reload();
+                        loadDashboardStats(); // Refresh stats after clearing data
                     } else {
                         alert('Error: ' + data.message);
                     }
@@ -382,6 +382,7 @@
             .then(data => {
                 if (data.status === 'success') {
                     alert(`Student "${studentId}" has been deleted successfully.`);
+                    loadDashboardStats(); // Refresh stats after deletion
                 } else {
                     alert('Error deleting student: ' + data.message);
                 }
@@ -391,6 +392,32 @@
                 alert('Failed to delete student');
             });
         }
+
+        function loadDashboardStats() {
+            fetch('/dashboard_stats')
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'success') {
+                    const stats = data.stats;
+                    
+                    // Update the stat cards with real data
+                    document.getElementById('activeSessions').textContent = stats.active_sessions;
+                    document.getElementById('enrolledStudents').textContent = stats.enrolled_students;
+                    document.getElementById('todaysAttendance').textContent = stats.todays_attendance;
+                    document.getElementById('avgAttendance').textContent = stats.avg_attendance + '%';
+                } else {
+                    console.error('Error loading dashboard stats:', data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error fetching dashboard stats:', error);
+            });
+        }
+
+        // Load dashboard stats when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            loadDashboardStats();
+        });
     </script>
 </body>
 </html>

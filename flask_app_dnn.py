@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, flash, session
+from flask import Flask, render_template, request, jsonify, Response, redirect, url_for, flash, session, send_file
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
@@ -24,6 +24,14 @@ from tensorflow.keras.preprocessing.image import img_to_array
 import threading
 import time
 import faiss
+import json
+import csv
+from io import BytesIO, StringIO
+from openpyxl import Workbook
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, A4
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
 import base64
 import io
 from PIL import Image
@@ -63,6 +71,18 @@ class User(UserMixin, db.Model):
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+
+class Attendance(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.String(80), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    in_time = db.Column(db.DateTime, nullable=True)
+    out_time = db.Column(db.DateTime, nullable=True)
+    session_id = db.Column(db.String(120), nullable=True)
+    status = db.Column(db.String(20), default='present')  # 'present', 'absent', 'completed'
+    
+    def __repr__(self):
+        return f'<Attendance {self.student_id} on {self.date}>'
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -108,14 +128,8 @@ attendance_data = set()
 current_session = None
 session_data = {}
 
-# Daily attendance tracking - format: {date: {student_id: {'in_time': datetime, 'out_time': datetime}}}
-daily_attendance = {}
-
 # Store last daily attendance result for user feedback
 last_daily_result = None
-
-# Attendance file path
-DAILY_ATTENDANCE_FILE = os.path.join(os.path.dirname(__file__), 'data', 'daily_attendance.csv')
 
 # FAISS index file path
 FAISS_INDEX_FILE = os.path.join(os.path.dirname(__file__), 'data', 'embeddings.faiss')
@@ -676,7 +690,56 @@ def end_attendance_session():
         absent_students = all_students - present_students
         current_session['absentees'] = absent_students
         
-        # Save session to file
+        # Save attendance records to database
+        session_date = current_session['start_time'].date()
+        
+        # Save present students
+        for student_id, times in current_session['attendees'].items():
+            # Check if student already has a record for today
+            existing_record = Attendance.query.filter_by(
+                student_id=student_id, 
+                date=session_date
+            ).first()
+            
+            if not existing_record:
+                # Create new attendance record
+                attendance_record = Attendance(
+                    student_id=student_id,
+                    date=session_date,
+                    in_time=times['in_time'],
+                    out_time=times['out_time'],
+                    session_id=current_session['session_id'],
+                    status='completed' if times['out_time'] else 'present'
+                )
+                db.session.add(attendance_record)
+            else:
+                # Update existing record if it doesn't have out_time
+                if not existing_record.out_time and times['out_time']:
+                    existing_record.out_time = times['out_time']
+                    existing_record.status = 'completed'
+        
+        # Save absent students
+        for student_id in absent_students:
+            # Check if student already has a record for today
+            existing_record = Attendance.query.filter_by(
+                student_id=student_id, 
+                date=session_date
+            ).first()
+            
+            if not existing_record:
+                attendance_record = Attendance(
+                    student_id=student_id,
+                    date=session_date,
+                    in_time=None,
+                    out_time=None,
+                    session_id=current_session['session_id'],
+                    status='absent'
+                )
+                db.session.add(attendance_record)
+        
+        db.session.commit()
+        
+        # Save session to file (keep for backward compatibility)
         save_session_to_file(current_session)
         
         return current_session['session_id']
@@ -723,83 +786,31 @@ def save_session_to_file(session):
                    f"{student_id},,,absent\n")
 
 # ---------------- DAILY ATTENDANCE SYSTEM ----------------
-def load_daily_attendance():
-    """Load daily attendance data from CSV file"""
-    global daily_attendance
-    
-    if not os.path.exists(DAILY_ATTENDANCE_FILE):
-        # Create the data directory if it doesn't exist
-        os.makedirs(os.path.dirname(DAILY_ATTENDANCE_FILE), exist_ok=True)
-        return {}
-    
-    daily_attendance = {}
-    try:
-        with open(DAILY_ATTENDANCE_FILE, "r") as f:
-            lines = f.readlines()
-            if len(lines) <= 1:  # Only header or empty
-                return {}
-            
-            for line in lines[1:]:  # Skip header
-                parts = line.strip().split(',')
-                if len(parts) >= 4:
-                    date, student_id, in_time_str, out_time_str = parts[:4]
-                    
-                    if date not in daily_attendance:
-                        daily_attendance[date] = {}
-                    
-                    daily_attendance[date][student_id] = {
-                        'in_time': datetime.strptime(in_time_str, '%Y-%m-%d %H:%M:%S') if in_time_str else None,
-                        'out_time': datetime.strptime(out_time_str, '%Y-%m-%d %H:%M:%S') if out_time_str else None
-                    }
-    except Exception as e:
-        print(f"Error loading daily attendance: {e}")
-        daily_attendance = {}
-    
-    return daily_attendance
-
-def save_daily_attendance():
-    """Save daily attendance data to CSV file"""
-    global daily_attendance
-    
-    try:
-        # Create the data directory if it doesn't exist
-        os.makedirs(os.path.dirname(DAILY_ATTENDANCE_FILE), exist_ok=True)
-        
-        with open(DAILY_ATTENDANCE_FILE, "w") as f:
-            f.write("date,student_id,in_time,out_time\n")
-            
-            for date, students in daily_attendance.items():
-                for student_id, times in students.items():
-                    in_time_str = times['in_time'].strftime('%Y-%m-%d %H:%M:%S') if times['in_time'] else ''
-                    out_time_str = times['out_time'].strftime('%Y-%m-%d %H:%M:%S') if times['out_time'] else ''
-                    f.write(f"{date},{student_id},{in_time_str},{out_time_str}\n")
-    except Exception as e:
-        print(f"Error saving daily attendance: {e}")
 
 def mark_daily_attendance(student_id):
     """
     Mark attendance for a student with automatic in/out detection and 1-minute threshold
     Returns: dict with status info
     """
-    global daily_attendance
-    
     current_time = datetime.now()
-    today = current_time.strftime('%Y-%m-%d')
+    today = current_time.date()
     
-    # Initialize today's attendance if not exists
-    if today not in daily_attendance:
-        daily_attendance[today] = {}
+    # Check if student has attendance record for today
+    attendance_record = Attendance.query.filter_by(
+        student_id=student_id, 
+        date=today
+    ).first()
     
-    # Initialize student record for today if not exists
-    if student_id not in daily_attendance[today]:
-        daily_attendance[today][student_id] = {'in_time': None, 'out_time': None}
-    
-    student_today = daily_attendance[today][student_id]
-    
-    # Check if student has no record for today - mark as IN
-    if student_today['in_time'] is None:
-        student_today['in_time'] = current_time
-        save_daily_attendance()
+    if not attendance_record:
+        # Create new attendance record for IN time
+        attendance_record = Attendance(
+            student_id=student_id,
+            date=today,
+            in_time=current_time,
+            status='present'
+        )
+        db.session.add(attendance_record)
+        db.session.commit()
         
         return {
             'action': 'in',
@@ -808,9 +819,10 @@ def mark_daily_attendance(student_id):
             'student_id': student_id
         }
     
-    # Student has in_time, check if they can mark out (1-minute threshold)
-    elif student_today['out_time'] is None:
-        time_diff = (current_time - student_today['in_time']).total_seconds()
+    # Student has existing record
+    if attendance_record.out_time is None:
+        # Check 1-minute threshold
+        time_diff = (current_time - attendance_record.in_time).total_seconds()
         
         if time_diff < 60:  # Less than 1 minute
             return {
@@ -821,11 +833,12 @@ def mark_daily_attendance(student_id):
             }
         
         # Mark as OUT
-        student_today['out_time'] = current_time
-        save_daily_attendance()
+        attendance_record.out_time = current_time
+        attendance_record.status = 'completed'
+        db.session.commit()
         
         # Calculate total time spent
-        total_minutes = int((current_time - student_today['in_time']).total_seconds() / 60)
+        total_minutes = int((current_time - attendance_record.in_time).total_seconds() / 60)
         hours = total_minutes // 60
         minutes = total_minutes % 60
         
@@ -835,14 +848,14 @@ def mark_daily_attendance(student_id):
             'message': f'Time OUT marked for {student_id}',
             'student_id': student_id,
             'total_time': f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m",
-            'in_time': student_today['in_time'].strftime('%H:%M:%S'),
+            'in_time': attendance_record.in_time.strftime('%H:%M:%S'),
             'out_time': current_time.strftime('%H:%M:%S')
         }
     
     # Student already has both in and out time for today
     else:
-        in_time_str = student_today['in_time'].strftime('%H:%M:%S')
-        out_time_str = student_today['out_time'].strftime('%H:%M:%S')
+        in_time_str = attendance_record.in_time.strftime('%H:%M:%S')
+        out_time_str = attendance_record.out_time.strftime('%H:%M:%S')
         
         return {
             'action': 'completed',
@@ -853,51 +866,64 @@ def mark_daily_attendance(student_id):
         }
 
 def get_today_attendance_summary():
-    """Get summary of today's attendance"""
-    global daily_attendance
+    """Get summary of today's attendance from database including all enrolled students"""
+    today = datetime.now().date()
     
-    today = datetime.now().strftime('%Y-%m-%d')
+    # Get all enrolled students
+    enrolled_students = profile_manager.profiles
     
-    if today not in daily_attendance:
-        return {
-            'date': today,
-            'total_students': 0,
-            'present_students': 0,
-            'completed_students': 0,
-            'students': []
-        }
+    # Get today's attendance records
+    today_records = Attendance.query.filter_by(date=today).all()
+    
+    # Create a dictionary of attendance records by student_id for quick lookup
+    attendance_dict = {record.student_id: record for record in today_records}
     
     students_data = []
     present_count = 0
     completed_count = 0
     
-    for student_id, times in daily_attendance[today].items():
-        student_info = {
-            'student_id': student_id,
-            'in_time': times['in_time'].strftime('%H:%M:%S') if times['in_time'] else None,
-            'out_time': times['out_time'].strftime('%H:%M:%S') if times['out_time'] else None,
-            'status': 'absent'
-        }
-        
-        if times['in_time']:
-            present_count += 1
-            student_info['status'] = 'present'
+    # Process all enrolled students
+    for student_id, profile in enrolled_students.items():
+        if profile.get('enrollment_status') != 'active':
+            continue  # Skip inactive students
             
-            if times['out_time']:
-                completed_count += 1
-                student_info['status'] = 'completed'
+        if student_id in attendance_dict:
+            # Student has attendance record
+            record = attendance_dict[student_id]
+            student_info = {
+                'student_id': record.student_id,
+                'name': profile.get('name', 'Unknown'),
+                'in_time': record.in_time.strftime('%H:%M:%S') if record.in_time else None,
+                'out_time': record.out_time.strftime('%H:%M:%S') if record.out_time else None,
+                'status': record.status
+            }
+            
+            if record.in_time:
+                present_count += 1
                 
-                # Calculate total time
-                total_seconds = (times['out_time'] - times['in_time']).total_seconds()
-                total_minutes = int(total_seconds / 60)
-                hours = total_minutes // 60
-                minutes = total_minutes % 60
-                student_info['total_time'] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+                if record.out_time:
+                    completed_count += 1
+                    # Calculate total time
+                    total_seconds = (record.out_time - record.in_time).total_seconds()
+                    total_minutes = int(total_seconds / 60)
+                    hours = total_minutes // 60
+                    minutes = total_minutes % 60
+                    student_info['total_time'] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+        else:
+            # Student has no attendance record today - mark as absent
+            student_info = {
+                'student_id': student_id,
+                'name': profile.get('name', 'Unknown'),
+                'in_time': None,
+                'out_time': None,
+                'status': 'absent'
+            }
         
         students_data.append(student_info)
     
     return {
-        'date': today,
+        'date': today.strftime('%Y-%m-%d'),
+        'formatted_date': today.strftime('%B %d, %Y'),
         'total_students': len(students_data),
         'present_students': present_count,
         'completed_students': completed_count,
@@ -1468,6 +1494,43 @@ def list_students():
             'message': f'Failed to list students: {str(e)}'
         })
 
+@app.route('/dashboard_stats', methods=['GET'])
+@login_required
+@admin_required
+def dashboard_stats():
+    """Get dashboard statistics for admin"""
+    global faiss_manager, current_session
+    
+    try:
+        # Get enrolled students count
+        enrolled_students = len(faiss_manager.student_ids) if faiss_manager else 0
+        
+        # Get active sessions count
+        active_sessions = 1 if current_session and current_session['status'] == 'active' else 0
+        
+        # Get today's attendance count
+        today_summary = get_today_attendance_summary()
+        todays_attendance = today_summary['present_students']
+        
+        # Calculate average attendance (simplified - could be enhanced)
+        # For now, just return a placeholder
+        avg_attendance = 85  # This could be calculated from historical data
+        
+        return jsonify({
+            'status': 'success',
+            'stats': {
+                'enrolled_students': enrolled_students,
+                'active_sessions': active_sessions,
+                'todays_attendance': todays_attendance,
+                'avg_attendance': avg_attendance
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'message': f'Failed to get dashboard stats: {str(e)}'
+        })
+
 # ---------------- STUDENT MANAGEMENT ROUTES ----------------
 
 @app.route('/students')
@@ -1862,6 +1925,242 @@ def mark_out():
 @admin_required
 def view_attendance():
     return render_template('attendance_view.html')
+
+# ---------------- EXPORT ROUTES ----------------
+
+@app.route('/export_attendance/<format>')
+@login_required
+@admin_required
+def export_attendance(format):
+    """Export attendance data in specified format"""
+    date_str = request.args.get('date')
+    
+    if not date_str:
+        return jsonify({'error': 'Date parameter is required'}), 400
+    
+    try:
+        # Parse the date
+        export_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+    except ValueError:
+        return jsonify({'error': 'Invalid date format'}), 400
+    
+    # Get attendance data for the specified date
+    attendance_data = get_attendance_for_date(export_date)
+    
+    if format.lower() == 'csv':
+        return export_csv(attendance_data, export_date)
+    elif format.lower() == 'excel':
+        return export_excel(attendance_data, export_date)
+    elif format.lower() == 'pdf':
+        return export_pdf(attendance_data, export_date)
+    else:
+        return jsonify({'error': 'Unsupported format'}), 400
+
+def get_attendance_for_date(target_date):
+    """Get attendance data for a specific date"""
+    # Get all enrolled students
+    enrolled_students = profile_manager.profiles
+    
+    # Get attendance records for the target date
+    attendance_records = Attendance.query.filter_by(date=target_date).all()
+    
+    # Create a dictionary of attendance records by student_id for quick lookup
+    attendance_dict = {record.student_id: record for record in attendance_records}
+    
+    attendance_data = []
+    
+    # Process all enrolled students
+    for student_id, profile in enrolled_students.items():
+        if profile.get('enrollment_status') != 'active':
+            continue  # Skip inactive students
+            
+        if student_id in attendance_dict:
+            # Student has attendance record
+            record = attendance_dict[student_id]
+            student_info = {
+                'student_id': record.student_id,
+                'name': profile.get('name', 'Unknown'),
+                'date': record.date.strftime('%Y-%m-%d'),
+                'in_time': record.in_time.strftime('%H:%M:%S') if record.in_time else '',
+                'out_time': record.out_time.strftime('%H:%M:%S') if record.out_time else '',
+                'status': record.status,
+                'session_id': record.session_id or '',
+                'duration': ''
+            }
+            
+            # Calculate duration if both times are available
+            if record.in_time and record.out_time:
+                total_seconds = (record.out_time - record.in_time).total_seconds()
+                total_minutes = int(total_seconds / 60)
+                hours = total_minutes // 60
+                minutes = total_minutes % 60
+                student_info['duration'] = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+        else:
+            # Student has no attendance record for this date
+            student_info = {
+                'student_id': student_id,
+                'name': profile.get('name', 'Unknown'),
+                'date': target_date.strftime('%Y-%m-%d'),
+                'in_time': '',
+                'out_time': '',
+                'status': 'absent',
+                'session_id': '',
+                'duration': ''
+            }
+        
+        attendance_data.append(student_info)
+    
+    return attendance_data
+
+def export_csv(attendance_data, export_date):
+    """Export attendance data as CSV"""
+    output = StringIO()
+    writer = csv.writer(output)
+    
+    # Write header
+    writer.writerow(['Student ID', 'Name', 'Date', 'In Time', 'Out Time', 'Duration', 'Status', 'Session ID'])
+    
+    # Write data
+    for record in attendance_data:
+        writer.writerow([
+            record['student_id'],
+            record['name'],
+            record['date'],
+            record['in_time'],
+            record['out_time'],
+            record['duration'],
+            record['status'],
+            record['session_id']
+        ])
+    
+    output.seek(0)
+    # Convert StringIO to bytes for send_file
+    csv_data = output.getvalue().encode('utf-8')
+    output.close()
+    
+    return send_file(
+        BytesIO(csv_data),
+        mimetype='text/csv',
+        as_attachment=True,
+        download_name=f'attendance_{export_date.strftime("%Y-%m-%d")}.csv'
+    )
+
+def export_excel(attendance_data, export_date):
+    """Export attendance data as Excel"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f'Attendance_{export_date.strftime("%Y-%m-%d")}'
+    
+    # Write header
+    headers = ['Student ID', 'Name', 'Date', 'In Time', 'Out Time', 'Duration', 'Status', 'Session ID']
+    for col_num, header in enumerate(headers, 1):
+        ws.cell(row=1, column=col_num, value=header)
+    
+    # Write data
+    for row_num, record in enumerate(attendance_data, 2):
+        ws.cell(row=row_num, column=1, value=record['student_id'])
+        ws.cell(row=row_num, column=2, value=record['name'])
+        ws.cell(row=row_num, column=3, value=record['date'])
+        ws.cell(row=row_num, column=4, value=record['in_time'])
+        ws.cell(row=row_num, column=5, value=record['out_time'])
+        ws.cell(row=row_num, column=6, value=record['duration'])
+        ws.cell(row=row_num, column=7, value=record['status'])
+        ws.cell(row=row_num, column=8, value=record['session_id'])
+    
+    # Auto-adjust column widths
+    for column in ws.columns:
+        max_length = 0
+        column_letter = column[0].column_letter
+        for cell in column:
+            try:
+                if len(str(cell.value)) > max_length:
+                    max_length = len(str(cell.value))
+            except:
+                pass
+        adjusted_width = (max_length + 2)
+        ws.column_dimensions[column_letter].width = adjusted_width
+    
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=f'attendance_{export_date.strftime("%Y-%m-%d")}.xlsx'
+    )
+
+def export_pdf(attendance_data, export_date):
+    """Export attendance data as PDF"""
+    output = BytesIO()
+    doc = SimpleDocTemplate(output, pagesize=A4)
+    elements = []
+    
+    # Get styles
+    styles = getSampleStyleSheet()
+    
+    # Title
+    title = Paragraph(f"Attendance Report - {export_date.strftime('%B %d, %Y')}", styles['Title'])
+    elements.append(title)
+    elements.append(Spacer(1, 12))
+    
+    # Summary
+    total_students = len(attendance_data)
+    present_count = sum(1 for record in attendance_data if record['status'] in ['present', 'completed'])
+    absent_count = total_students - present_count
+    
+    summary_text = f"""
+    Total Students: {total_students}<br/>
+    Present: {present_count}<br/>
+    Absent: {absent_count}<br/>
+    Date: {export_date.strftime('%Y-%m-%d')}
+    """
+    summary = Paragraph(summary_text, styles['Normal'])
+    elements.append(summary)
+    elements.append(Spacer(1, 20))
+    
+    # Table data
+    data = [['Student ID', 'Name', 'In Time', 'Out Time', 'Duration', 'Status']]
+    
+    for record in attendance_data:
+        data.append([
+            record['student_id'],
+            record['name'],
+            record['in_time'] or '-',
+            record['out_time'] or '-',
+            record['duration'] or '-',
+            record['status']
+        ])
+    
+    # Create table
+    table = Table(data)
+    
+    # Style the table
+    style = TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 14),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+        ('GRID', (0, 0), (-1, -1), 1, colors.black)
+    ])
+    table.setStyle(style)
+    
+    elements.append(table)
+    
+    # Build PDF
+    doc.build(elements)
+    output.seek(0)
+    
+    return send_file(
+        output,
+        mimetype='application/pdf',
+        as_attachment=True,
+        download_name=f'attendance_{export_date.strftime("%Y-%m-%d")}.pdf'
+    )
 
 # ---------------- DATABASE INITIALIZATION ----------------
 def init_db():
